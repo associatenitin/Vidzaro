@@ -136,18 +136,25 @@ export async function generateThumbnails(videoPath, outputDir, interval = 1) {
   }
 
   const videoInfo = await getVideoInfo(videoPath);
-  const duration = videoInfo.duration;
+  const duration = videoInfo.duration || 1; // Fallback to 1s if duration is 0
+  const count = Math.max(1, Math.ceil(duration / interval));
 
   return new Promise((resolve, reject) => {
     ffmpeg(videoPath)
       .screenshots({
-        count: Math.ceil(duration / interval),
+        count: count,
         folder: outputDir,
         filename: 'thumb-%i.png',
         size: '160x90'
       })
-      .on('end', () => resolve())
-      .on('error', (err) => reject(new Error(`Thumbnail generation error: ${err.message}`)));
+      .on('end', () => {
+        console.log(`Successfully generated ${count} thumbnails for ${path.basename(videoPath)}`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error(`FFmpeg Error generating thumbnails for ${videoPath}:`, err.message);
+        reject(new Error(`Thumbnail generation error: ${err.message}`));
+      });
   });
 }
 

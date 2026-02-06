@@ -1,4 +1,4 @@
-export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange }) {
+export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -30,6 +30,26 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
 
       <div className="flex items-center gap-2 text-sm text-slate-400 font-mono w-24">
         <span>{formatTime(currentTime)}</span>
+      </div>
+
+      {/* Undo/Redo */}
+      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          className={`p-1.5 rounded ${canUndo ? 'text-slate-300 hover:text-white hover:bg-slate-600' : 'text-slate-600 cursor-not-allowed'}`}
+          title="Undo (Ctrl+Z)"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          className={`p-1.5 rounded ${canRedo ? 'text-slate-300 hover:text-white hover:bg-slate-600' : 'text-slate-600 cursor-not-allowed'}`}
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" /></svg>
+        </button>
       </div>
 
       <div className="h-6 w-px bg-slate-700"></div>

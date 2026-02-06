@@ -3,17 +3,18 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, isDragging }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
   const [thumbnails, setThumbnails] = useState([]);
   const [waveformUrl, setWaveformUrl] = useState(null);
 
-  const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
+  const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
 
   useEffect(() => {
-    if (isImage) return;
+    if (isImage || isAudio) return;
 
     const fetchResources = async () => {
       try {
@@ -130,6 +131,8 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             alt=""
             className="w-full h-full object-cover"
           />
+        ) : isAudio ? (
+          <div className="w-full h-full bg-slate-800/50"></div>
         ) : (
           visibleThumbnails.map((thumb, i) => (
             <img
@@ -164,7 +167,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       {/* Clip content */}
       <div className="absolute inset-2 flex flex-col items-center justify-between text-white text-[10px] font-medium pointer-events-none">
         <div className="truncate w-full text-center drop-shadow-md">
-          {clip.originalName || clip.filename}
+          {clip.originalName || clip.filename || 'Untitled'}
         </div>
 
         <div className="flex items-center gap-1">
@@ -177,16 +180,37 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
         </div>
       </div>
 
-      {/* Filter, Volume & Speed controls - visible on hover */}
+      {/* Filter, Audio & Speed controls - visible on hover */}
       <div
-        className="absolute top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 z-20 bg-slate-900/90 p-1.5 rounded border border-slate-600 shadow-xl"
+        className="absolute top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2 z-20 bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56"
         onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
       >
+        <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1">
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Clip Settings</span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => onUpdate({ audioEnabled: !((clip.audioEnabled === undefined) ? true : clip.audioEnabled) })}
+              className={`p-1 rounded text-[8px] ${(clip.audioEnabled === false) ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}
+            >
+              {clip.audioEnabled === false ? '🔇' : '🔊'}
+            </button>
+            {onDetachAudio && clip.videoEnabled !== false && (
+              <button
+                onClick={onDetachAudio}
+                className="p-1 rounded bg-slate-700 text-white text-[8px] hover:bg-slate-600"
+                title="Detach Audio"
+              >
+                🔗 Detach
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
           <select
             value={clip.filter || ''}
             onChange={(e) => onUpdate({ filter: e.target.value || null })}
-            className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-20"
+            className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 flex-1"
           >
             <option value="">No Filter</option>
             <option value="grayscale">Grayscale</option>
@@ -206,24 +230,59 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[8px] text-slate-400 w-6">VOL</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] text-slate-400">VOLUME</span>
+            <span className="text-[9px] text-slate-500">{Math.round((clip.volume || 1) * 100)}%</span>
+          </div>
           <input
             type="range"
             min="0"
             max="2"
-            step="0.1"
+            step="0.05"
             value={clip.volume || 1}
             onChange={(e) => onUpdate({ volume: parseFloat(e.target.value) })}
-            className="w-24 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
-          <span className="text-[8px] text-slate-400">{Math.round((clip.volume || 1) * 100)}%</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <div className="flex justify-between">
+              <span className="text-[8px] text-slate-400">FADE IN</span>
+              <span className="text-[8px] font-mono">{(clip.fadeIn || 0).toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="5"
+              step="0.1"
+              value={clip.fadeIn || 0}
+              onChange={(e) => onUpdate({ fadeIn: parseFloat(e.target.value) })}
+              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between">
+              <span className="text-[8px] text-slate-400">FADE OUT</span>
+              <span className="text-[8px] font-mono">{(clip.fadeOut || 0).toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="5"
+              step="0.1"
+              value={clip.fadeOut || 0}
+              onChange={(e) => onUpdate({ fadeOut: parseFloat(e.target.value) })}
+              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-1 border-t border-slate-700 pt-1 mt-1">
           <input
             type="text"
-            placeholder="Add text overlay..."
+            placeholder="Text Overlay..."
             value={clip.text || ''}
             onChange={(e) => onUpdate({ text: e.target.value || null })}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"

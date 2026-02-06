@@ -19,13 +19,69 @@ export function useProject() {
 
   const [activeTool, setActiveTool] = useState('select'); // select, ripple, razor
 
+  // History State
+  const [history, setHistory] = useState([]);
+  const [future, setFuture] = useState([]);
+
+  // Wrapped setProject to handle history
+  const setProjectWithHistory = useCallback((projectOrUpdater) => {
+    setProject((prev) => {
+      const newProject = typeof projectOrUpdater === 'function' ? projectOrUpdater(prev) : projectOrUpdater;
+
+      // Push current state to history
+      setHistory((prevHistory) => {
+        const newHistory = [...prevHistory, prev];
+        // Limit history size to 50
+        if (newHistory.length > 50) return newHistory.slice(newHistory.length - 50);
+        return newHistory;
+      });
+
+      // Clear future
+      setFuture([]);
+
+      return newProject;
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setHistory((prevHistory) => {
+      if (prevHistory.length === 0) return prevHistory;
+
+      const previousState = prevHistory[prevHistory.length - 1];
+      const newHistory = prevHistory.slice(0, -1);
+
+      setProject((currentProject) => {
+        setFuture((prevFuture) => [currentProject, ...prevFuture]);
+        return previousState;
+      });
+
+      return newHistory;
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setFuture((prevFuture) => {
+      if (prevFuture.length === 0) return prevFuture;
+
+      const nextState = prevFuture[0];
+      const newFuture = prevFuture.slice(1);
+
+      setProject((currentProject) => {
+        setHistory((prevHistory) => [...prevHistory, currentProject]);
+        return nextState;
+      });
+
+      return newFuture;
+    });
+  }, []);
+
   const addAsset = useCallback((assetData) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       assets: [...(prev.assets || []), { ...assetData, id: uuidv4() }],
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const addClip = useCallback((asset, position = null) => {
     // position = { track: number, time: number }
@@ -61,38 +117,42 @@ export function useProject() {
       track: trackId,
       startPos: startPos,
       order: project.clips.length,
-      filter: null
+      filter: null,
+      videoEnabled: true,
+      audioEnabled: asset.type !== 'image',
+      fadeIn: 0,
+      fadeOut: 0
     };
 
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       clips: [...prev.clips, newClip],
       updatedAt: new Date().toISOString(),
     }));
 
     return newClip;
-  }, [project.clips]);
+  }, [project.clips, setProjectWithHistory]);
 
   const removeClip = useCallback((clipId) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       clips: prev.clips.filter((clip) => clip.id !== clipId),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const updateClip = useCallback((clipId, updates) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       clips: prev.clips.map((clip) =>
         clip.id === clipId ? { ...clip, ...updates } : clip
       ),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const reorderClips = useCallback((newOrder) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       clips: newOrder.map((clip, index) => ({
         ...clip,
@@ -100,10 +160,10 @@ export function useProject() {
       })),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const splitClip = useCallback((clipId, splitTime) => {
-    setProject((prev) => {
+    setProjectWithHistory((prev) => {
       const clipIndex = prev.clips.findIndex((c) => c.id === clipId);
       if (clipIndex === -1) return prev;
 
@@ -140,45 +200,78 @@ export function useProject() {
         updatedAt: new Date().toISOString(),
       };
     });
+  }, [setProjectWithHistory]);
+
+  const detachAudio = useCallback((clipId) => {
+    setProject((prev) => {
+      const clip = prev.clips.find(c => c.id === clipId);
+      if (!clip) return prev;
+
+      // Disable audio on original clip
+      const updatedClips = prev.clips.map(c =>
+        c.id === clipId ? { ...c, audioEnabled: false } : c
+      );
+
+      // Create new audio-only clip
+      const audioTrack = prev.tracks.find(t => t.type === 'audio') || prev.tracks[prev.tracks.length - 1];
+
+      const audioClip = {
+        ...clip,
+        id: uuidv4(),
+        videoEnabled: false,
+        audioEnabled: true,
+        track: audioTrack.id,
+        order: prev.clips.length,
+        label: `Audio: ${clip.originalName}`
+      };
+
+      return {
+        ...prev,
+        clips: [...updatedClips, audioClip],
+        updatedAt: new Date().toISOString()
+      };
+    });
   }, []);
 
   const removeAsset = useCallback((assetId) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       assets: (prev.assets || []).filter(a => a.id !== assetId),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const renameAsset = useCallback((assetId, newName) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       assets: (prev.assets || []).map(a => a.id === assetId ? { ...a, originalName: newName } : a),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const loadProjectData = useCallback((projectData) => {
     setProject(projectData);
+    setHistory([]);
+    setFuture([]);
   }, []);
 
   const setProjectName = useCallback((name) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       name,
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const updateTrack = useCallback((trackId, updates) => {
-    setProject((prev) => ({
+    setProjectWithHistory((prev) => ({
       ...prev,
       tracks: prev.tracks.map((track) =>
         track.id === trackId ? { ...track, ...updates } : track
       ),
       updatedAt: new Date().toISOString(),
     }));
-  }, []);
+  }, [setProjectWithHistory]);
 
   const resetProject = useCallback(() => {
     setProject({
@@ -188,6 +281,8 @@ export function useProject() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    setHistory([]);
+    setFuture([]);
   }, []);
 
   return {
@@ -197,6 +292,7 @@ export function useProject() {
     updateClip,
     reorderClips,
     splitClip,
+    detachAudio,
     setProjectName,
     updateTrack,
     addAsset,
@@ -206,5 +302,10 @@ export function useProject() {
     activeTool,
     setActiveTool,
     resetProject,
+    // History
+    undo,
+    redo,
+    canUndo: history.length > 0,
+    canRedo: future.length > 0
   };
 }

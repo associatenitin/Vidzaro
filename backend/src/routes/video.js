@@ -28,6 +28,9 @@ router.get('/:id/info', async (req, res, next) => {
   }
 });
 
+// Map to track active thumbnail generation processes
+const activeGenerations = new Map();
+
 /**
  * GET /api/video/:id/thumbnails
  * Generate and get thumbnails for a video
@@ -39,13 +42,38 @@ router.get('/:id/thumbnails', async (req, res, next) => {
     const videoThumbDir = path.join(THUMBNAILS_DIR, videoId);
 
     if (!(await fileExists(videoPath))) {
-      return res.status(404).json({ error: 'Video not found' });
+      return res.status(404).json({ error: 'Video not found', path: videoPath });
     }
 
-    // Create thumbnail directory for this video if it doesn't exist
-    if (!(await fileExists(videoThumbDir))) {
-      await fs.promises.mkdir(videoThumbDir, { recursive: true });
-      await generateThumbnails(videoPath, videoThumbDir);
+    // Wait if another process is already generating thumbnails for this video
+    if (activeGenerations.has(videoId)) {
+      await activeGenerations.get(videoId);
+    }
+
+    // Check if thumbnails already exist
+    let thumbnailsExist = await fileExists(videoThumbDir);
+    if (thumbnailsExist) {
+      // Double check if directory is empty
+      const existingFiles = await fs.promises.readdir(videoThumbDir);
+      if (existingFiles.filter(f => f.endsWith('.png')).length === 0) {
+        thumbnailsExist = false;
+      }
+    }
+
+    if (!thumbnailsExist) {
+      const generationPromise = (async () => {
+        try {
+          if (!(await fileExists(videoThumbDir))) {
+            await fs.promises.mkdir(videoThumbDir, { recursive: true });
+          }
+          await generateThumbnails(videoPath, videoThumbDir);
+        } finally {
+          activeGenerations.delete(videoId);
+        }
+      })();
+
+      activeGenerations.set(videoId, generationPromise);
+      await generationPromise;
     }
 
     // List thumbnails
@@ -53,14 +81,17 @@ router.get('/:id/thumbnails', async (req, res, next) => {
     const thumbnails = files
       .filter(f => f.endsWith('.png'))
       .sort((a, b) => {
-        const numA = parseInt(a.match(/\d+/)[0]);
-        const numB = parseInt(b.match(/\d+/)[0]);
+        const matchA = a.match(/\d+/);
+        const matchB = b.match(/\d+/);
+        const numA = matchA ? parseInt(matchA[0]) : 0;
+        const numB = matchB ? parseInt(matchB[0]) : 0;
         return numA - numB;
       })
       .map(f => `/thumbnails/${videoId}/${f}`);
 
     res.json(thumbnails);
   } catch (error) {
+    console.error(`Thumbnail route error for ${req.params.id}:`, error);
     next(error);
   }
 });

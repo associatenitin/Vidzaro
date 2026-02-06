@@ -16,6 +16,7 @@ function App() {
     updateClip,
     reorderClips,
     splitClip,
+    detachAudio,
     setProjectName,
     updateTrack,
     addAsset,
@@ -24,6 +25,10 @@ function App() {
     loadProjectData,
     activeTool,
     setActiveTool,
+    undo,
+    redo,
+    canUndo,
+    canRedo
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -176,6 +181,10 @@ function App() {
             onPlayPause={handlePlayPause}
             activeTool={activeTool}
             onToolChange={setActiveTool}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
           />
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
             <VideoPlayer
@@ -208,6 +217,7 @@ function App() {
           onReorder={reorderClips}
           onTrackUpdate={updateTrack}
           onDropAsset={(asset, pos) => addClip(asset, pos)}
+          onDetachAudio={detachAudio}
           activeTool={activeTool}
         />
       </div>

@@ -5,7 +5,18 @@ import Clip from './Clip';
 
 const PIXELS_PER_SECOND = 50; // Base zoom level
 
-export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpdate, onClipRemove, onReorder, onTrackUpdate, onDropAsset, activeTool }) {
+export default function Timeline({
+  project,
+  currentTime,
+  onTimeUpdate,
+  onClipUpdate,
+  onClipRemove,
+  onReorder,
+  onTrackUpdate,
+  onDropAsset,
+  onDetachAudio,
+  activeTool
+}) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const timelineRef = useRef(null);
@@ -144,60 +155,54 @@ export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpd
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const json = e.dataTransfer.getData('application/json');
+
+    // Try to get data from multiple formats (application/json or text/plain)
+    let json = e.dataTransfer.getData('application/json');
+    if (!json) {
+      json = e.dataTransfer.getData('text/plain');
+    }
+
     if (!json) return;
 
     try {
       const data = JSON.parse(json);
-      if (data.type === 'asset' && onClipUpdate) {
+
+      // Check for asset type and ensure onDropAsset exists
+      if (data.type === 'asset' && onDropAsset) {
         if (!timelineRef.current) return;
 
         // Calculate drop position
         const rect = timelineRef.current.getBoundingClientRect();
 
-        // X coordinate -> Time
-        // Adjust for scroll if necessary (timelineRef overflow-x)
-        // The event clientX is relative to viewport.
-        // timelineRef.current is the scrolling container.
-        // The inner div has the width.
-
+        // X coordinate calculation
         const scrollLeft = timelineRef.current.scrollLeft;
-        const x = e.clientX - rect.left + scrollLeft;
-        // Timeline starts at some left padding usually? In our case, Tracks Content is "relative" inside.
-        // Let's look at structure:
-        // <div className="flex-1 overflow-x-auto" ref={timelineRef}>
-        //   <div relative minWidth ...> 
-        //      <div absolute top-8 ... tracks container>
+        const sidebarWidth = 192; // w-48
+        const relativeX = (e.clientX - rect.left) + scrollLeft - sidebarWidth;
+        const time = Math.max(0, relativeX / (PIXELS_PER_SECOND * zoom));
 
-        const time = Math.max(0, x / (PIXELS_PER_SECOND * zoom));
+        // Y coordinate calculation
+        const y = e.clientY - rect.top; // Relative to visible top of timelineRef
+        const tracksStartY = 32; // Ruler height (h-8)
+        const scrollTop = timelineRef.current.scrollTop;
+        const totalRelativeY = y - tracksStartY + scrollTop;
 
-        // Y coordinate -> Track
-        // We need y relative to the Tracks Container top.
-        // The tracks container is top-8 (32px) down.
-        const y = e.clientY - rect.top; // Relative to visible top
-        // Adjust for scrollY if we had vertical scroll (which we do in main area)
+        // Improved Track Detection Loop
+        let trackId = tracks[0].id;
+        let currentY = 0;
 
-        // We need to match the track structure
-        // The track container: <div className="absolute top-8 ..."> 
-        // Header height is 40px (10rem class? no h-10 is 40px). Ruler is h-8 (32px).
-        // So tracks start at 32px relative to timelineRef content.
-
-        const tracksStartY = 32;
-        const relativeY = y - tracksStartY + timelineRef.current.scrollTop;
-
-        const trackHeight = 80; // Approximate
-        const trackIndex = Math.floor(relativeY / trackHeight);
-
-        // Bounds check
-        if (trackIndex >= 0 && trackIndex < tracks.length) {
-          const trackId = tracks[trackIndex].id;
-          if (onDropAsset) {
-            onDropAsset(data, { time, track: trackId });
+        for (const track of tracks) {
+          const trackHeight = track.height || 80;
+          // If we are within this track's vertical range, select it
+          if (totalRelativeY < currentY + trackHeight) {
+            trackId = track.id;
+            break;
           }
-        } else {
-          // Drop on empty space - maybe default to last track?
-          // For now, ignore invalid drops
+          currentY += trackHeight;
+          trackId = track.id; // Fallback to last track if below all
         }
+
+        console.log(`Dropping asset ${data.originalName} at time ${time.toFixed(2)}s on track ${trackId}`);
+        onDropAsset(data, { time, track: trackId });
       }
     } catch (err) {
       console.error('Drop failed', err);
@@ -345,6 +350,7 @@ export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpd
                               pixelsPerSecond={PIXELS_PER_SECOND * zoom}
                               onUpdate={(updates) => onClipUpdate(clip.id, updates)}
                               onRemove={() => onClipRemove(clip.id)}
+                              onDetachAudio={() => onDetachAudio && onDetachAudio(clip.id)}
                               isDragging={draggedClipId === clip.id}
                             />
                           </div>

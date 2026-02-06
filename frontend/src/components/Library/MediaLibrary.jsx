@@ -30,11 +30,17 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
     // Drag start for library items to timeline
     const handleDragStart = (e, asset) => {
         if (contextMenu) setContextMenu(null);
-        // Set data for HTML5 drag and drop
-        e.dataTransfer.setData('application/json', JSON.stringify({
+
+        const dragData = JSON.stringify({
             type: 'asset',
             ...asset
-        }));
+        });
+
+        // Set data for HTML5 drag and drop
+        // Using multiple formats for maximum browser compatibility
+        e.dataTransfer.setData('application/json', dragData);
+        e.dataTransfer.setData('text/plain', dragData);
+
         e.dataTransfer.effectAllowed = 'copy';
     };
 
