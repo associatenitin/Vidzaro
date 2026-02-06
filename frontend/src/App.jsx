@@ -34,6 +34,7 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
 
   // Layout state
   const [timelineHeight, setTimelineHeight] = useState(300); // Initial height in pixels
@@ -168,7 +169,14 @@ function App() {
             onUpload={addAsset} // Unified
             onRemoveAsset={removeAsset}
             onRenameAsset={renameAsset}
-            onAddToTimeline={(asset) => addClip(asset)}
+            onAddToTimeline={(asset, trackId) => {
+              // If trackId is provided, add at start of that track
+              // Otherwise, add at end of track 0
+              const position = trackId !== undefined ? { track: trackId, time: 0 } : null;
+              addClip(asset, position);
+            }}
+            onAssetSelect={setSelectedAsset}
+            selectedAssetId={selectedAsset?.id}
           />
         </div>
 
@@ -193,6 +201,7 @@ function App() {
               isPlaying={isPlaying}
               onTimeUpdate={handleTimeUpdate}
               onPlayPause={handlePlayPause}
+              previewAsset={selectedAsset}
             />
           </div>
         </div>

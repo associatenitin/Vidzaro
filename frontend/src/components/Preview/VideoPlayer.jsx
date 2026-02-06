@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getVideoUrl } from '../../services/api';
 
-export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause }) {
+export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
+  const [previewTime, setPreviewTime] = useState(0);
 
   // Calculate which clips should be active based on currentTime
   const getActiveClips = () => {
@@ -36,51 +37,79 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   const videoClips = activeClips.filter(c => c.clip.videoEnabled !== false);
   const topVideoClip = videoClips[0] || null;
 
+  // Show preview if no active clips but preview asset is selected
+  const showPreview = !topVideoClip && previewAsset;
+
+  // Reset preview time when asset changes
+  useEffect(() => {
+    if (previewAsset) {
+      setPreviewTime(0);
+    }
+  }, [previewAsset?.id]);
+
   return (
     <div className="w-full max-w-4xl relative group bg-black rounded-lg shadow-2xl overflow-hidden aspect-video">
-      {/* 1. All Audio Elements (Hidden) */}
-      {activeClips.map((info) => {
-        const isImage = info.clip.type === 'image' || info.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-        if (info.clip.audioEnabled === false || isImage) return null;
-
-        const isTopVideo = topVideoClip && topVideoClip.clip.id === info.clip.id;
-        // If it's the top video, we might want to use the main visible element's audio 
-        // but for consistency we can just render it. 
-        // Actually, we'll render all audio uniquely.
-        return (
-          <AudioLayer
-            key={info.clip.id + '-audio'}
-            clipInfo={info}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            onTimeUpdate={isTopVideo ? onTimeUpdate : null} // Only top video drives timeline
-            onPlayPause={onPlayPause}
-            project={project}
-          />
-        );
-      })}
-
-      {/* 2. Primary Video/Image Display */}
-      {topVideoClip ? (
-        <div className="w-full h-full flex items-center justify-center">
-          <VideoLayer
-            clipInfo={topVideoClip}
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            project={project}
-          />
-        </div>
+      {showPreview ? (
+        // Preview Mode: Show selected asset from Media Library
+        <PreviewAssetLayer
+          asset={previewAsset}
+          isPlaying={isPlaying}
+          currentTime={previewTime}
+          onTimeUpdate={(time) => {
+            setPreviewTime(time);
+            // Also update main timeline time when previewing (if timeline is empty)
+            if (project.clips.length === 0 && onTimeUpdate) {
+              onTimeUpdate(time);
+            }
+          }}
+        />
       ) : (
-        <div className="text-slate-500 font-medium">No active video</div>
-      )}
+        <>
+          {/* 1. All Audio Elements (Hidden) */}
+          {activeClips.map((info) => {
+            const isImage = info.clip.type === 'image' || info.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+            if (info.clip.audioEnabled === false || isImage) return null;
 
-      {/* 3. Global Overlays */}
-      {topVideoClip?.clip.text && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
-          <span className="text-white text-4xl font-bold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-center px-10">
-            {topVideoClip.clip.text}
-          </span>
-        </div>
+            const isTopVideo = topVideoClip && topVideoClip.clip.id === info.clip.id;
+            // If it's the top video, we might want to use the main visible element's audio 
+            // but for consistency we can just render it. 
+            // Actually, we'll render all audio uniquely.
+            return (
+              <AudioLayer
+                key={info.clip.id + '-audio'}
+                clipInfo={info}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                onTimeUpdate={isTopVideo ? onTimeUpdate : null} // Only top video drives timeline
+                onPlayPause={onPlayPause}
+                project={project}
+              />
+            );
+          })}
+
+          {/* 2. Primary Video/Image Display */}
+          {topVideoClip ? (
+            <div className="w-full h-full flex items-center justify-center">
+              <VideoLayer
+                clipInfo={topVideoClip}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                project={project}
+              />
+            </div>
+          ) : (
+            <div className="text-slate-500 font-medium">No active video</div>
+          )}
+
+          {/* 3. Global Overlays */}
+          {topVideoClip?.clip.text && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
+              <span className="text-white text-4xl font-bold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-center px-10">
+                {topVideoClip.clip.text}
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -177,5 +206,111 @@ function VideoLayer({ clipInfo, currentTime, project }) {
     // Video element here is JUST for display, sync is handled by reference to currentTime
     // But we might need a ref to get frame accuracy
     />
+  );
+}
+
+// Preview Asset Layer for Media Library preview
+function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
+  const videoRef = useRef(null);
+  const audioRef = useRef(null);
+  const isImage = asset.type === 'image' || asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const isAudio = asset.type === 'audio' || asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i);
+  const videoUrl = getVideoUrl(asset.filename);
+
+  // Handle video playback
+  useEffect(() => {
+    if (isImage || isAudio) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPlaying) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+
+    // Sync time
+    if (Math.abs(video.currentTime - currentTime) > 0.15) {
+      video.currentTime = currentTime;
+    }
+  }, [isPlaying, currentTime, isImage, isAudio]);
+
+  // Handle audio playback
+  useEffect(() => {
+    if (!isAudio) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+
+    // Sync time
+    if (Math.abs(audio.currentTime - currentTime) > 0.15) {
+      audio.currentTime = currentTime;
+    }
+  }, [isPlaying, currentTime, isAudio]);
+
+  // Handle time updates from video/audio elements
+  const handleTimeUpdate = (e) => {
+    const newTime = e.target.currentTime;
+    if (onTimeUpdate && Math.abs(newTime - currentTime) > 0.1) {
+      onTimeUpdate(newTime);
+    }
+  };
+
+  if (isImage) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <img
+          src={videoUrl}
+          alt={asset.originalName}
+          className="max-w-full max-h-full object-contain"
+        />
+      </div>
+    );
+  }
+
+  if (isAudio) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+        <div className="text-6xl mb-4">🎵</div>
+        <div className="text-lg font-medium">{asset.originalName}</div>
+        <div className="text-sm text-slate-500 mt-2">
+          {Math.floor(currentTime)}s / {Math.floor(asset.duration || 0)}s
+        </div>
+        <audio
+          ref={audioRef}
+          src={videoUrl}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={() => {
+            if (onTimeUpdate) onTimeUpdate(0);
+          }}
+          preload="auto"
+        />
+      </div>
+    );
+  }
+
+  // Video
+  return (
+    <div className="w-full h-full flex items-center justify-center relative">
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        className="max-w-full max-h-full"
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={() => {
+          if (onTimeUpdate) onTimeUpdate(0);
+        }}
+        preload="metadata"
+      />
+      {/* Preview indicator */}
+      <div className="absolute top-2 left-2 bg-blue-600/80 px-2 py-1 rounded text-xs text-white">
+        Preview
+      </div>
+    </div>
   );
 }

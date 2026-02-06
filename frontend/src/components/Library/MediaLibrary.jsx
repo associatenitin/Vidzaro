@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { getThumbnailUrl, getVideoUrl } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 
-export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline }) {
+export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId }) {
     const [filter, setFilter] = useState('all'); // all, video, audio, image
 
     // Handle file dragging from desktop (HTML5)
@@ -17,6 +17,7 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState(null);
+    const [showTrackMenu, setShowTrackMenu] = useState(false);
 
     const handleContextMenu = (e, asset) => {
         e.preventDefault();
@@ -25,6 +26,7 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
             y: e.clientY,
             asset
         });
+        setShowTrackMenu(false);
     };
 
     // Drag start for library items to timeline
@@ -32,8 +34,8 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
         if (contextMenu) setContextMenu(null);
 
         const dragData = JSON.stringify({
-            type: 'asset',
-            ...asset
+            ...asset,
+            type: 'asset' // Ensure type is 'asset' for timeline drop detection
         });
 
         // Set data for HTML5 drag and drop
@@ -86,8 +88,17 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                                     key={asset.id}
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, asset)}
+                                    onClick={() => {
+                                        if (onAssetSelect) {
+                                            onAssetSelect(selectedAssetId === asset.id ? null : asset);
+                                        }
+                                    }}
                                     onContextMenu={(e) => handleContextMenu(e, asset)}
-                                    className="group relative aspect-video bg-slate-800 rounded border border-slate-700 hover:border-blue-500 cursor-grab active:cursor-grabbing overflow-hidden"
+                                    className={`group relative aspect-video bg-slate-800 rounded border overflow-hidden ${
+                                        selectedAssetId === asset.id 
+                                            ? 'border-blue-500 ring-2 ring-blue-500/50' 
+                                            : 'border-slate-700 hover:border-blue-500'
+                                    } cursor-grab active:cursor-grabbing`}
                                 >
                                     <div className="absolute inset-0 flex items-center justify-center bg-slate-950 text-slate-600 text-[10px] uppercase font-bold tracking-wider">
                                         {type === 'image' ? (
@@ -126,22 +137,108 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
             {/* Context Menu */}
             {contextMenu && (
                 <div
-                    className="fixed z-50 bg-slate-800 border border-slate-700 rounded shadow-xl py-1 w-40"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                    className="fixed z-50 bg-slate-800 border border-slate-700 rounded shadow-xl py-1"
+                    style={{ 
+                        top: contextMenu.y, 
+                        left: contextMenu.x,
+                        width: showTrackMenu ? '200px' : '180px'
+                    }}
                 >
                     <div className="px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700 font-medium truncate">
                         {contextMenu.asset.originalName}
                     </div>
+                    
+                    {/* Add to Timeline - with track selection */}
+                    <div className="relative">
+                        <button
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-blue-400 font-medium flex items-center justify-between"
+                            onMouseEnter={() => setShowTrackMenu(true)}
+                            onMouseLeave={() => setShowTrackMenu(false)}
+                        >
+                            <span>➕ Add to Timeline</span>
+                            <span className="text-slate-500">▶</span>
+                        </button>
+                        
+                        {/* Track Selection Submenu */}
+                        {showTrackMenu && (
+                            <div 
+                                className="absolute left-full top-0 ml-1 bg-slate-800 border border-slate-700 rounded shadow-xl py-1 min-w-[160px] z-60"
+                                style={{
+                                    // Adjust position if near right edge
+                                    left: contextMenu.x > window.innerWidth - 400 ? 'auto' : '100%',
+                                    right: contextMenu.x > window.innerWidth - 400 ? '100%' : 'auto',
+                                    marginLeft: contextMenu.x > window.innerWidth - 400 ? '-1px' : '4px',
+                                    marginRight: contextMenu.x > window.innerWidth - 400 ? '4px' : '0'
+                                }}
+                                onMouseEnter={() => setShowTrackMenu(true)}
+                                onMouseLeave={() => setShowTrackMenu(false)}
+                            >
+                                <div className="px-3 py-1 text-[10px] text-slate-500 uppercase font-bold border-b border-slate-700">
+                                    Select Track
+                                </div>
+                                {(project.tracks || []).map((track) => {
+                                    // Filter tracks based on asset type
+                                    const assetType = contextMenu.asset.type || 
+                                        (contextMenu.asset.filename.match(/\.(mp4|mov|webm)$/i) ? 'video' :
+                                         contextMenu.asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
+                                         contextMenu.asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
+                                    
+                                    // Show video/image tracks for video/image assets, audio tracks for audio assets
+                                    const isCompatible = (track.type === 'video' && (assetType === 'video' || assetType === 'image')) ||
+                                                       (track.type === 'audio' && assetType === 'audio');
+                                    
+                                    if (!isCompatible) return null;
+                                    
+                                    return (
+                                        <button
+                                            key={track.id}
+                                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-slate-200 flex items-center gap-2"
+                                            onClick={() => {
+                                                if (onAddToTimeline) {
+                                                    onAddToTimeline(contextMenu.asset, track.id);
+                                                }
+                                                setContextMenu(null);
+                                                setShowTrackMenu(false);
+                                            }}
+                                        >
+                                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                            {track.label}
+                                        </button>
+                                    );
+                                })}
+                                {(!project.tracks || project.tracks.length === 0) && (
+                                    <div className="px-3 py-2 text-xs text-slate-500">
+                                        No tracks available
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Quick add to first compatible track */}
                     <button
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-blue-400 font-medium"
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-slate-300"
                         onClick={() => {
                             if (onAddToTimeline) {
-                                onAddToTimeline(contextMenu.asset);
+                                // Find first compatible track or default to track 0
+                                const assetType = contextMenu.asset.type || 
+                                    (contextMenu.asset.filename.match(/\.(mp4|mov|webm)$/i) ? 'video' :
+                                     contextMenu.asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
+                                     contextMenu.asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
+                                
+                                const tracks = project.tracks || [];
+                                const compatibleTrack = tracks.find(t => 
+                                    (t.type === 'video' && (assetType === 'video' || assetType === 'image')) ||
+                                    (t.type === 'audio' && assetType === 'audio')
+                                );
+                                
+                                const trackId = compatibleTrack ? compatibleTrack.id : 0;
+                                onAddToTimeline(contextMenu.asset, trackId);
                             }
                             setContextMenu(null);
                         }}
                     >
-                        ➕ Add to Timeline (Start)
+                        ➕ Add to Timeline (Start - Track 0)
                     </button>
                     {/*
                     <button
@@ -190,8 +287,15 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
             {contextMenu && (
                 <div
                     className="fixed inset-0 z-40"
-                    onClick={() => setContextMenu(null)}
-                    onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+                    onClick={() => {
+                        setContextMenu(null);
+                        setShowTrackMenu(false);
+                    }}
+                    onContextMenu={(e) => { 
+                        e.preventDefault(); 
+                        setContextMenu(null);
+                        setShowTrackMenu(false);
+                    }}
                 ></div>
             )}
 
