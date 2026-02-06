@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl } from '../../services/api';
+import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 
 export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, isDragging }) {
   const [isResizing, setIsResizing] = useState(null);
@@ -10,7 +10,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [thumbnails, setThumbnails] = useState([]);
   const [waveformUrl, setWaveformUrl] = useState(null);
 
+  const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+
   useEffect(() => {
+    if (isImage) return;
+
     const fetchResources = async () => {
       try {
         const response = await getVideoThumbnails(clip.videoId);
@@ -19,12 +23,10 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
         console.error('Failed to fetch thumbnails:', error);
       }
 
-      // Wavform URL is predictable but we might want to check existence or just set it
-      // Since backend generates on demand, simple GET works.
       setWaveformUrl(getWaveformUrl(clip.videoId));
     };
     fetchResources();
-  }, [clip.videoId]);
+  }, [clip.videoId, isImage]);
 
   const visibleThumbnails = useMemo(() => {
     if (thumbnails.length === 0) return [];
@@ -122,15 +124,23 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     >
       {/* Thumbnails Background */}
       <div className="absolute inset-0 flex pointer-events-none opacity-40">
-        {visibleThumbnails.map((thumb, i) => (
+        {isImage ? (
           <img
-            key={i}
-            src={getThumbnailUrl(thumb)}
+            src={getVideoUrl(clip.videoId)}
             alt=""
-            className="h-full object-cover"
-            style={{ width: `${100 / visibleThumbnails.length}%` }}
+            className="w-full h-full object-cover"
           />
-        ))}
+        ) : (
+          visibleThumbnails.map((thumb, i) => (
+            <img
+              key={i}
+              src={getThumbnailUrl(thumb)}
+              alt=""
+              className="h-full object-cover"
+              style={{ width: `${100 / visibleThumbnails.length}%` }}
+            />
+          ))
+        )}
       </div>
 
       {/* Waveform Overlay */}

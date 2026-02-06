@@ -6,6 +6,7 @@ import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
 import ExportPanel from './components/Export/ExportPanel';
 import { useEffect } from 'react';
+import { saveProject, loadProject } from './services/api';
 
 function App() {
   const {
@@ -18,6 +19,9 @@ function App() {
     setProjectName,
     updateTrack,
     addAsset,
+    removeAsset,
+    renameAsset,
+    loadProjectData,
     activeTool,
     setActiveTool,
   } = useProject();
@@ -88,15 +92,56 @@ function App() {
     };
   }, [isResizing]);
 
+  const handleSave = async () => {
+    try {
+      await saveProject(project);
+      alert('Project saved successfully!');
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      alert('Failed to save project');
+    }
+  };
+
+  const handleLoad = async () => {
+    const id = prompt('Enter project ID to load:', project.id);
+    if (!id) return;
+    try {
+      const resp = await loadProject(id);
+      loadProjectData(resp.data);
+      alert('Project loaded successfully!');
+    } catch (error) {
+      console.error('Load failed:', error);
+      alert('Load failed');
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
       {/* Header */}
       <header className="bg-slate-800 border-b border-slate-700 px-6 py-2 flex-shrink-0 h-14">
         <div className="flex items-center justify-between h-full">
-          <div>
+          <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold text-white">Vidzaro</h1>
+            <input
+              type="text"
+              value={project.name}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="bg-slate-900 border border-slate-700 px-3 py-1 rounded text-sm focus:outline-none focus:border-blue-500 w-48"
+            />
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={handleLoad}
+              className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium border border-slate-600"
+            >
+              Load
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium border border-slate-600"
+            >
+              Save
+            </button>
             <button
               onClick={() => setShowExportPanel(true)}
               className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium"
@@ -116,6 +161,9 @@ function App() {
             project={project}
             onAddAsset={addAsset}
             onUpload={addAsset} // Unified
+            onRemoveAsset={removeAsset}
+            onRenameAsset={renameAsset}
+            onAddToTimeline={(asset) => addClip(asset)}
           />
         </div>
 
@@ -133,6 +181,7 @@ function App() {
             <VideoPlayer
               project={project}
               currentTime={currentTime}
+              isPlaying={isPlaying}
               onTimeUpdate={handleTimeUpdate}
               onPlayPause={handlePlayPause}
             />

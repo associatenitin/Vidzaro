@@ -142,6 +142,26 @@ export function useProject() {
     });
   }, []);
 
+  const removeAsset = useCallback((assetId) => {
+    setProject((prev) => ({
+      ...prev,
+      assets: (prev.assets || []).filter(a => a.id !== assetId),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+  const renameAsset = useCallback((assetId, newName) => {
+    setProject((prev) => ({
+      ...prev,
+      assets: (prev.assets || []).map(a => a.id === assetId ? { ...a, originalName: newName } : a),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+  const loadProjectData = useCallback((projectData) => {
+    setProject(projectData);
+  }, []);
+
   const setProjectName = useCallback((name) => {
     setProject((prev) => ({
       ...prev,
@@ -180,6 +200,9 @@ export function useProject() {
     setProjectName,
     updateTrack,
     addAsset,
+    removeAsset,
+    renameAsset,
+    loadProjectData,
     activeTool,
     setActiveTool,
     resetProject,

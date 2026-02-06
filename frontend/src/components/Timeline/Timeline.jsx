@@ -149,7 +149,9 @@ export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpd
 
     try {
       const data = JSON.parse(json);
-      if (data.type === 'asset' && onClipUpdate) { // onClipUpdate checks if we are in valid context, actually we need a new prop onDropAsset
+      if (data.type === 'asset' && onClipUpdate) {
+        if (!timelineRef.current) return;
+
         // Calculate drop position
         const rect = timelineRef.current.getBoundingClientRect();
 
@@ -192,6 +194,9 @@ export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpd
           if (onDropAsset) {
             onDropAsset(data, { time, track: trackId });
           }
+        } else {
+          // Drop on empty space - maybe default to last track?
+          // For now, ignore invalid drops
         }
       }
     } catch (err) {
@@ -228,7 +233,7 @@ export default function Timeline({ project, currentTime, onTimeUpdate, onClipUpd
       </div>
 
       {/* Main Timeline Area (Sidebar + Ruler + Tracks) */}
-      <div className="flex-1 overflow-auto relative custom-scrollbar">
+      <div className="flex-1 overflow-auto relative custom-scrollbar" ref={timelineRef}>
         <div className="min-w-full inline-block relative">
 
           {/* Top Ruler & Corner */}

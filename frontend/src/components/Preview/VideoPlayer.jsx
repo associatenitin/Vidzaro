@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { getVideoUrl } from '../../services/api';
 
-export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlayPause }) {
+export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause }) {
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
 
@@ -33,6 +33,18 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
   const activeClips = getActiveClips();
   const currentClipInfo = activeClips[0] || null;
 
+  // Handle Play/Pause
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPlaying) {
+      video.play().catch(e => console.log("Playback blocked:", e));
+    } else {
+      video.pause();
+    }
+  }, [isPlaying]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !currentClipInfo) return;
@@ -40,7 +52,7 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
     const handleTimeUpdate = () => {
       if (!isSeekingRef.current) {
         const clipLocalTime = video.currentTime;
-        const timelineTime = currentClipInfo.clipStartTime + (clipLocalTime - (currentClipInfo.clip.trimStart || 0));
+        const timelineTime = currentClipInfo.clipStartTimeOnTimeline + (clipLocalTime - (currentClipInfo.clip.trimStart || 0)) / (currentClipInfo.clip.speed || 1);
         onTimeUpdate(timelineTime);
       }
     };
@@ -99,6 +111,7 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
   }
 
   const videoUrl = getVideoUrl(currentClipInfo.clip.videoId);
+  const isImage = currentClipInfo.clip.type === 'image' || currentClipInfo.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
 
   const getFilterStyle = (filter) => {
     switch (filter) {
@@ -111,14 +124,23 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
 
   return (
     <div className="w-full max-w-4xl relative group">
-      <video
-        ref={videoRef}
-        src={videoUrl}
-        className="w-full rounded-lg shadow-2xl"
-        style={{ filter: getFilterStyle(currentClipInfo.clip.filter) }}
-        controls
-        preload="metadata"
-      />
+      {isImage ? (
+        <img
+          src={videoUrl}
+          alt={currentClipInfo.clip.originalName}
+          className="w-full rounded-lg shadow-2xl aspect-video object-contain bg-black"
+          style={{ filter: getFilterStyle(currentClipInfo.clip.filter) }}
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          className="w-full rounded-lg shadow-2xl"
+          style={{ filter: getFilterStyle(currentClipInfo.clip.filter) }}
+          controls
+          preload="metadata"
+        />
+      )}
 
       {currentClipInfo.clip.text && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

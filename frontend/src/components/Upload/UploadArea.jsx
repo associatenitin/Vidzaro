@@ -33,20 +33,38 @@ export default function UploadArea({ onUpload, compact = false }) {
   };
 
   const processFile = async (file) => {
-    if (!file.type.startsWith('video/')) {
-      alert('Please upload a video file');
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
+
+    if (!isVideo && !isImage && !isAudio) {
+      alert('Please upload a video, image, or audio file');
       return;
     }
 
     setUploading(true);
     try {
+      // images and audios might need different endpoints if backend splits them, 
+      // but usually uploadVideo handles generic multipart
       const response = await uploadVideo(file, (percent) => {
         setProgress(percent);
       });
-      onUpload(response.data);
+
+      const assetData = response.data;
+      // If it's an image, duration might be null from backend, set a default
+      if (isImage && !assetData.duration) {
+        assetData.duration = 5; // Default 5 seconds for images
+        assetData.type = 'image';
+      } else if (isAudio) {
+        assetData.type = 'audio';
+      } else {
+        assetData.type = 'video';
+      }
+
+      onUpload(assetData);
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Failed to upload video');
+      alert('Failed to upload file');
     } finally {
       setUploading(false);
       setProgress(0);
@@ -83,8 +101,8 @@ export default function UploadArea({ onUpload, compact = false }) {
   return (
     <div
       className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed m-8 rounded-xl transition-colors ${isDragging
-          ? 'border-blue-500 bg-blue-500/10'
-          : 'border-slate-700 hover:border-slate-600 bg-slate-800/50'
+        ? 'border-blue-500 bg-blue-500/10'
+        : 'border-slate-700 hover:border-slate-600 bg-slate-800/50'
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
