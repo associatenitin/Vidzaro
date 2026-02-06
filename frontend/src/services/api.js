@@ -96,4 +96,9 @@ export async function loadProject(projectId) {
   return api.get(`/projects/${projectId}`);
 }
 
+// Load project from file content
+export async function loadProjectFromContent(content) {
+  return api.post('/projects/load-from-content', { content });
+}
+
 export default api;

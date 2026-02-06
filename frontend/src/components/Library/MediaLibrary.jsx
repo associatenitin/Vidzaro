@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { getThumbnailUrl, getVideoUrl } from '../../services/api';
+import { getThumbnailUrl, getVideoUrl, getVideoThumbnails } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 
 export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId }) {
     const [filter, setFilter] = useState('all'); // all, video, audio, image
+    const [thumbnails, setThumbnails] = useState({}); // Map of assetId -> thumbnail URL
+    const [failedThumbnails, setFailedThumbnails] = useState(new Set()); // Track failed thumbnail loads
+    const fetchingRef = useRef(new Set()); // Track which assets we're currently fetching
 
     // Handle file dragging from desktop (HTML5)
     const handleDragOver = (e) => {
@@ -56,6 +59,55 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
         return type === filter;
     });
 
+    // Fetch thumbnails for video assets
+    useEffect(() => {
+        const videoAssets = (project.assets || []).filter(asset => {
+            const type = asset.type || (asset.filename.match(/\.(mp4|mov|webm)$/i) ? 'video' :
+                asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
+                    asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
+            return type === 'video';
+        });
+
+        // Fetch thumbnails for assets that don't have one yet
+        videoAssets.forEach(asset => {
+            // Check current thumbnails state and fetching ref
+            setThumbnails(prev => {
+                // Skip if we already have a thumbnail or are currently fetching
+                if (prev[asset.id] || fetchingRef.current.has(asset.id)) {
+                    return prev;
+                }
+
+                // Mark as fetching
+                fetchingRef.current.add(asset.id);
+
+                // Fetch thumbnail
+                getVideoThumbnails(asset.filename)
+                    .then(response => {
+                        if (response.data && response.data.length > 0) {
+                            const firstThumbnail = response.data[0];
+                            setThumbnails(prevThumbs => {
+                                // Double-check to avoid race conditions
+                                if (prevThumbs[asset.id]) return prevThumbs;
+                                return {
+                                    ...prevThumbs,
+                                    [asset.id]: getThumbnailUrl(firstThumbnail)
+                                };
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`Failed to fetch thumbnail for ${asset.filename}:`, error);
+                    })
+                    .finally(() => {
+                        // Remove from fetching set
+                        fetchingRef.current.delete(asset.id);
+                    });
+
+                return prev; // Return unchanged state
+            });
+        });
+    }, [project.assets]); // Re-fetch when assets change
+
     return (
         <div className="h-full flex flex-col bg-slate-900 border-r border-slate-700">
             {/* Header */}
@@ -83,6 +135,9 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                                 asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
                                     asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
 
+                            // Check if this asset is used in any clip on the timeline
+                            const isInTimeline = project.clips && project.clips.some(clip => clip.assetId === asset.id);
+
                             return (
                                 <div
                                     key={asset.id}
@@ -100,17 +155,45 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                                             : 'border-slate-700 hover:border-blue-500'
                                     } cursor-grab active:cursor-grabbing`}
                                 >
-                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950 text-slate-600 text-[10px] uppercase font-bold tracking-wider">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950 text-slate-600 text-[10px] uppercase font-bold tracking-wider overflow-hidden">
                                         {type === 'image' ? (
                                             <img
                                                 src={getVideoUrl(asset.filename)}
                                                 alt=""
                                                 className="w-full h-full object-cover"
                                             />
+                                        ) : type === 'video' && thumbnails[asset.id] && !failedThumbnails.has(asset.id) ? (
+                                            <img
+                                                src={thumbnails[asset.id]}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                                onError={() => {
+                                                    // Mark thumbnail as failed, will show fallback text
+                                                    setFailedThumbnails(prev => new Set(prev).add(asset.id));
+                                                }}
+                                            />
                                         ) : (
                                             <span>{type}</span>
                                         )}
                                     </div>
+
+                                    {/* Green Checkmark - shown when asset is in timeline */}
+                                    {isInTimeline && (
+                                        <div className="absolute top-1 left-1 bg-green-500 rounded-full p-1 shadow-lg z-10">
+                                            <svg 
+                                                xmlns="http://www.w3.org/2000/svg" 
+                                                viewBox="0 0 20 20" 
+                                                fill="currentColor" 
+                                                className="w-3 h-3 text-white"
+                                            >
+                                                <path 
+                                                    fillRule="evenodd" 
+                                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" 
+                                                    clipRule="evenodd" 
+                                                />
+                                            </svg>
+                                        </div>
+                                    )}
 
                                     {/* Label */}
                                     <div className="absolute bottom-0 left-0 right-0 bg-slate-900/80 p-1 text-[10px] truncate text-slate-300">

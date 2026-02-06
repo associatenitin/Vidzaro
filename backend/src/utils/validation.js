@@ -1,4 +1,6 @@
 const ALLOWED_VIDEO_TYPES = ['.mp4', '.webm', '.mov', '.avi'];
+const ALLOWED_IMAGE_TYPES = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+const ALLOWED_AUDIO_TYPES = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 
 export function validateVideoFile(file) {
@@ -18,6 +20,35 @@ export function validateVideoFile(file) {
   }
 
   return true;
+}
+
+export function validateMediaFile(file) {
+  if (!file) {
+    throw new Error('No file provided');
+  }
+
+  const ext = file.originalname.toLowerCase().match(/\.[^.]+$/)?.[0];
+  const allAllowedTypes = [...ALLOWED_VIDEO_TYPES, ...ALLOWED_IMAGE_TYPES, ...ALLOWED_AUDIO_TYPES];
+  
+  if (!ext || !allAllowedTypes.includes(ext)) {
+    throw new Error(
+      `Invalid file type. Allowed types: ${allAllowedTypes.join(', ')}`
+    );
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(`File size exceeds maximum of ${MAX_FILE_SIZE / 1024 / 1024}MB`);
+  }
+
+  return true;
+}
+
+export function getFileType(file) {
+  const ext = file.originalname.toLowerCase().match(/\.[^.]+$/)?.[0];
+  if (ALLOWED_VIDEO_TYPES.includes(ext)) return 'video';
+  if (ALLOWED_IMAGE_TYPES.includes(ext)) return 'image';
+  if (ALLOWED_AUDIO_TYPES.includes(ext)) return 'audio';
+  return 'unknown';
 }
 
 export function validateTimestamp(timestamp) {

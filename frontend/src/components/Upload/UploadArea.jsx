@@ -51,14 +51,9 @@ export default function UploadArea({ onUpload, compact = false }) {
       });
 
       const assetData = response.data;
-      // If it's an image, duration might be null from backend, set a default
-      if (isImage && !assetData.duration) {
+      // Backend now returns type, but ensure duration is set for images
+      if (assetData.type === 'image' && !assetData.duration) {
         assetData.duration = 5; // Default 5 seconds for images
-        assetData.type = 'image';
-      } else if (isAudio) {
-        assetData.type = 'audio';
-      } else {
-        assetData.type = 'video';
       }
 
       onUpload(assetData);
@@ -89,7 +84,7 @@ export default function UploadArea({ onUpload, compact = false }) {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <input type="file" className="hidden" accept="video/*" onChange={handleFileSelect} />
+            <input type="file" className="hidden" accept="video/*,image/*,audio/*" onChange={handleFileSelect} />
             <span className="text-xs text-slate-400 font-medium">+ Import Media</span>
           </label>
         )}
@@ -124,7 +119,7 @@ export default function UploadArea({ onUpload, compact = false }) {
             📁
           </div>
           <div>
-            <h3 className="text-lg font-medium text-white">Drop your video here</h3>
+            <h3 className="text-lg font-medium text-white">Drop your media here</h3>
             <p className="text-slate-400 text-sm">or click to browse</p>
           </div>
           <label className="inline-block px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer font-medium text-white transition-colors">
@@ -132,7 +127,7 @@ export default function UploadArea({ onUpload, compact = false }) {
             <input
               type="file"
               className="hidden"
-              accept="video/*"
+              accept="video/*,image/*,audio/*"
               onChange={handleFileSelect}
             />
           </label>

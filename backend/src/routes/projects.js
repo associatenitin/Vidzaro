@@ -1,5 +1,5 @@
 import express from 'express';
-import { saveProject, loadProject, listProjects, deleteProject } from '../services/projectService.js';
+import { saveProject, loadProject, loadProjectByPath, listProjects, deleteProject } from '../services/projectService.js';
 
 const router = express.Router();
 
@@ -36,6 +36,55 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const project = await loadProject(req.params.id);
+    res.json(project);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/projects/load-by-path
+ * Load a project by file path
+ */
+router.post('/load-by-path', async (req, res, next) => {
+  try {
+    const { filePath } = req.body;
+    
+    if (!filePath) {
+      return res.status(400).json({ error: 'File path is required' });
+    }
+
+    const project = await loadProjectByPath(filePath);
+    res.json(project);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/projects/load-from-content
+ * Load a project from file content (for web file uploads)
+ */
+router.post('/load-from-content', async (req, res, next) => {
+  try {
+    const { content } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'File content is required' });
+    }
+
+    let project;
+    try {
+      project = JSON.parse(content);
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid JSON in project file' });
+    }
+
+    // Validate it's a valid project structure
+    if (!project || typeof project !== 'object') {
+      return res.status(400).json({ error: 'Invalid project file format' });
+    }
+
     res.json(project);
   } catch (error) {
     next(error);

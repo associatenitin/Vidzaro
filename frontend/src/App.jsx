@@ -5,8 +5,9 @@ import Toolbar from './components/Toolbar/Toolbar';
 import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
 import ExportPanel from './components/Export/ExportPanel';
+import FileDialog from './components/Project/FileDialog';
 import { useEffect } from 'react';
-import { saveProject, loadProject } from './services/api';
+import { saveProject } from './services/api';
 
 function App() {
   const {
@@ -34,6 +35,7 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
 
   // Layout state
@@ -100,24 +102,43 @@ function App() {
 
   const handleSave = async () => {
     try {
-      await saveProject(project);
-      alert('Project saved successfully!');
+      // Prompt for project name if it's empty or default
+      let projectName = project.name;
+      if (!projectName || projectName.trim() === '' || projectName === 'Untitled Project') {
+        const name = prompt('Enter project name:', projectName || 'Untitled Project');
+        if (name === null) return; // User cancelled
+        projectName = name.trim() || 'Untitled Project';
+        setProjectName(projectName);
+      }
+
+      // Save with the name
+      const projectToSave = {
+        ...project,
+        name: projectName,
+      };
+      
+      const response = await saveProject(projectToSave);
+      const filePath = response.data?.filePath || 'Path not available';
+      
+      alert(`Project saved successfully!\n\nName: ${projectName}\nPath: ${filePath}`);
     } catch (error) {
       console.error('Failed to save project:', error);
       alert('Failed to save project');
     }
   };
 
-  const handleLoad = async () => {
-    const id = prompt('Enter project ID to load:', project.id);
-    if (!id) return;
+  const handleLoad = () => {
+    setShowLoadDialog(true);
+  };
+
+  const handleFileSelected = async (projectData, fileName, filePath) => {
     try {
-      const resp = await loadProject(id);
-      loadProjectData(resp.data);
-      alert('Project loaded successfully!');
+      loadProjectData(projectData);
+      setProjectName(projectData.name || 'Untitled Project');
+      alert(`Project loaded successfully!\n\nFile: ${fileName}`);
     } catch (error) {
       console.error('Load failed:', error);
-      alert('Load failed');
+      alert('Failed to load project. Please ensure it is a valid project file.');
     }
   };
 
@@ -238,6 +259,14 @@ function App() {
           onClose={() => setShowExportPanel(false)}
         />
       )}
+
+      {/* File Dialog for Loading Projects */}
+      <FileDialog
+        isOpen={showLoadDialog}
+        onClose={() => setShowLoadDialog(false)}
+        onSelectFile={handleFileSelected}
+        title="Load Project"
+      />
     </div>
   );
 }

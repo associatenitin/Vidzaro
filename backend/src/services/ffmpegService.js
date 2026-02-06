@@ -48,6 +48,77 @@ export async function getVideoInfo(filePath) {
 }
 
 /**
+ * Get media metadata for video, image, or audio files
+ */
+export async function getMediaInfo(filePath, fileType) {
+  if (!(await fileExists(filePath))) {
+    throw new Error(`Media file not found: ${filePath}`);
+  }
+
+  try {
+    const metadata = await ffprobeAsync(filePath);
+    const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+    const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+
+    if (fileType === 'image') {
+      // For images, get dimensions from video stream (images are treated as video streams by ffprobe)
+      return {
+        duration: 0, // Images don't have duration
+        size: parseInt(metadata.format.size) || 0,
+        format: metadata.format.format_name,
+        resolution: {
+          width: videoStream?.width || 0,
+          height: videoStream?.height || 0,
+        },
+        codec: videoStream?.codec_name || 'unknown',
+      };
+    } else if (fileType === 'audio') {
+      // For audio files
+      return {
+        duration: parseFloat(metadata.format.duration) || 0,
+        size: parseInt(metadata.format.size) || 0,
+        bitrate: parseInt(metadata.format.bit_rate) || 0,
+        format: metadata.format.format_name,
+        audio: audioStream
+          ? {
+            codec: audioStream.codec_name,
+            sampleRate: audioStream.sample_rate,
+            channels: audioStream.channels,
+          }
+          : null,
+      };
+    } else {
+      // For video files, use the existing getVideoInfo logic
+      return {
+        duration: parseFloat(metadata.format.duration) || 0,
+        size: parseInt(metadata.format.size) || 0,
+        bitrate: parseInt(metadata.format.bit_rate) || 0,
+        format: metadata.format.format_name,
+        video: videoStream
+          ? {
+            codec: videoStream.codec_name,
+            width: videoStream.width,
+            height: videoStream.height,
+            fps: videoStream.r_frame_rate
+              ? parseFloat(videoStream.r_frame_rate.split('/').reduce((a, b) => parseFloat(a) / parseFloat(b))) || 30
+              : 30,
+          }
+          : null,
+        audio: audioStream
+          ? {
+            codec: audioStream.codec_name,
+            sampleRate: audioStream.sample_rate,
+            channels: audioStream.channels,
+          }
+          : null,
+      };
+    }
+  } catch (error) {
+    throw new Error(`Failed to get media info: ${error.message}`);
+  }
+}
+
+/**
  * Trim video clip
  * FFmpeg command: ffmpeg -i input.mp4 -ss START -t DURATION -c copy output.mp4
  */
