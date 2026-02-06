@@ -69,7 +69,7 @@ export default function RegionSelector({ displayStream, onConfirm, onCancel }) {
     const y = e.clientY - rect.top;
     const edge = 12;
     const left = px.left, right = px.left + px.width, top = px.top, bottom = px.top + px.height;
-    dragStartRef.current = { x, y, ...region };
+    dragStartRef.current = { mouseX: x, mouseY: y, ...region };
     if (x >= left - edge && x <= left + edge && y >= top && y <= bottom) {
       setResizing('left');
       return;
@@ -98,8 +98,8 @@ export default function RegionSelector({ displayStream, onConfirm, onCancel }) {
       const rect = containerRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const dx = x - dragStartRef.current.x;
-      const dy = y - dragStartRef.current.y;
+      const dx = x - dragStartRef.current.mouseX;
+      const dy = y - dragStartRef.current.mouseY;
       const r = { ...dragStartRef.current };
       if (dragging) {
         let nx = r.x + dx / scale;
@@ -107,7 +107,7 @@ export default function RegionSelector({ displayStream, onConfirm, onCancel }) {
         nx = Math.max(0, Math.min(nx, videoSize.w - r.width));
         ny = Math.max(0, Math.min(ny, videoSize.h - r.height));
         setRegion({ ...r, x: nx, y: ny });
-        dragStartRef.current = { x, y, x: nx, y: ny, width: r.width, height: r.height };
+        dragStartRef.current = { mouseX: x, mouseY: y, x: nx, y: ny, width: r.width, height: r.height };
       } else {
         if (resizing === 'left') {
           const nw = r.width - dx / scale;
@@ -122,7 +122,7 @@ export default function RegionSelector({ displayStream, onConfirm, onCancel }) {
           const nh = r.height + dy / scale;
           if (nh > 40) setRegion((prev) => ({ ...prev, height: Math.min(nh, videoSize.h - prev.y) }));
         }
-        dragStartRef.current = { x, y, ...r };
+        dragStartRef.current = { mouseX: x, mouseY: y, ...r };
       }
     };
     const onUp = () => {

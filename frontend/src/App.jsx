@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useProject } from './hooks/useProject';
 import MediaLibrary from './components/Library/MediaLibrary';
+import MenuBar from './components/MenuBar/MenuBar';
 import Toolbar from './components/Toolbar/Toolbar';
 import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
@@ -31,6 +32,7 @@ function App() {
     loadProjectData,
     loadAutoSave,
     clearAutoSave,
+    resetProject,
     activeTool,
     setActiveTool,
     undo,
@@ -125,84 +127,6 @@ function App() {
     };
   }, [isResizing]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Don't trigger shortcuts when typing in inputs
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
-        return;
-      }
-
-      // Space - Play/Pause
-      if (e.code === 'Space') {
-        e.preventDefault();
-        setIsPlaying(!isPlaying);
-      }
-
-      // Ctrl+Z - Undo
-      if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') {
-        e.preventDefault();
-        if (canUndo) undo();
-      }
-
-      // Ctrl+Y or Ctrl+Shift+Z - Redo
-      if ((e.ctrlKey && e.code === 'KeyY') || (e.ctrlKey && e.shiftKey && e.code === 'KeyZ')) {
-        e.preventDefault();
-        if (canRedo) redo();
-      }
-
-      // V - Select tool
-      if (e.code === 'KeyV' && !e.ctrlKey) {
-        setActiveTool('select');
-      }
-
-      // B - Ripple tool
-      if (e.code === 'KeyB' && !e.ctrlKey) {
-        setActiveTool('ripple');
-      }
-
-      // S - Split at playhead
-      if (e.code === 'KeyS' && !e.ctrlKey) {
-        handleSplit();
-      }
-
-      // Left/Right arrows - Seek by small amount
-      if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        const step = e.shiftKey ? 1 : 1 / 30; // 1 second if shift, else 1 frame (30fps)
-        setCurrentTime(Math.max(0, currentTime - step));
-      }
-
-      if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        const step = e.shiftKey ? 1 : 1 / 30;
-        setCurrentTime(currentTime + step);
-      }
-
-      // Home - Go to start
-      if (e.code === 'Home') {
-        e.preventDefault();
-        setCurrentTime(0);
-      }
-
-      // Delete or Backspace - Remove selected clip
-      if ((e.code === 'Delete' || e.code === 'Backspace') && selectedClipId) {
-        e.preventDefault();
-        removeClip(selectedClipId);
-        setSelectedClipId(null);
-      }
-
-      // Escape - Deselect clip
-      if (e.code === 'Escape') {
-        setSelectedClipId(null);
-        setSelectedAsset(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, canUndo, canRedo, undo, redo, setActiveTool, currentTime, selectedClipId, removeClip]);
-
   const handleSave = () => {
     setShowSaveDialog(true);
   };
@@ -234,6 +158,72 @@ function App() {
     setShowLoadDialog(true);
   };
 
+  const handleNewProject = () => {
+    if (project.clips.length > 0 || project.assets.length > 0) {
+      if (!window.confirm('Start a new project? Unsaved changes will be lost.')) return;
+    }
+    resetProject();
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setSelectedClipId(null);
+    setSelectedAsset(null);
+  };
+
+  const handleResetTimelineHeight = () => {
+    setTimelineHeight(300);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedClipId) {
+      removeClip(selectedClipId);
+      setSelectedClipId(null);
+    }
+  };
+
+  const handleDeselect = () => {
+    setSelectedClipId(null);
+    setSelectedAsset(null);
+  };
+
+  const handleKeyboardShortcuts = () => {
+    alert(
+      'Playback: Space — Play/Pause\n' +
+      'Edit: Ctrl+Z — Undo | Ctrl+Shift+Z — Redo\n' +
+      'Tools: V — Select | B — Ripple | S — Split at playhead\n' +
+      'Navigate: ←/→ — Seek 1 frame | Shift+←/→ — Seek 1 sec | Home — Start\n' +
+      'Clip: Del/Backspace — Delete selected | Esc — Deselect\n' +
+      'File: Ctrl+N — New | Ctrl+O — Open | Ctrl+S — Save'
+    );
+  };
+
+  const handleAbout = () => {
+    alert('Vidzaro — Edit videos. Zero limits.\n\nA video editor in the browser.');
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+
+      if (e.code === 'Space') { e.preventDefault(); setIsPlaying(!isPlaying); }
+      if (e.ctrlKey && e.code === 'KeyN') { e.preventDefault(); handleNewProject(); }
+      if (e.ctrlKey && e.code === 'KeyO') { e.preventDefault(); handleLoad(); }
+      if (e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); handleSave(); }
+      if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') { e.preventDefault(); if (canUndo) undo(); }
+      if ((e.ctrlKey && e.code === 'KeyY') || (e.ctrlKey && e.shiftKey && e.code === 'KeyZ')) { e.preventDefault(); if (canRedo) redo(); }
+      if (e.code === 'KeyV' && !e.ctrlKey) setActiveTool('select');
+      if (e.code === 'KeyB' && !e.ctrlKey) setActiveTool('ripple');
+      if (e.code === 'KeyS' && !e.ctrlKey) handleSplit();
+      if (e.code === 'ArrowLeft') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; setCurrentTime(Math.max(0, currentTime - step)); }
+      if (e.code === 'ArrowRight') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; setCurrentTime(currentTime + step); }
+      if (e.code === 'Home') { e.preventDefault(); setCurrentTime(0); }
+      if ((e.code === 'Delete' || e.code === 'Backspace') && selectedClipId) { e.preventDefault(); removeClip(selectedClipId); setSelectedClipId(null); }
+      if (e.code === 'Escape') { setSelectedClipId(null); setSelectedAsset(null); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, canUndo, canRedo, undo, redo, setActiveTool, currentTime, selectedClipId, removeClip, handleNewProject, handleLoad, handleSave]);
+
   const handleFileSelected = async (projectData, fileName, filePath) => {
     try {
       loadProjectData(projectData);
@@ -247,46 +237,35 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
-      {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-2 flex-shrink-0 h-14">
-        <div className="flex items-center justify-between h-full">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-white">Vidzaro</h1>
-            <input
-              type="text"
-              value={project.name}
-              onChange={(e) => setProjectName(e.target.value)}
-              className="bg-slate-900 border border-slate-700 px-3 py-1 rounded text-sm focus:outline-none focus:border-blue-500 w-48"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleLoad}
-              className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium border border-slate-600"
-            >
-              Load
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium border border-slate-600"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => setShowRecorder(true)}
-              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium"
-            >
-              Record
-            </button>
-            <button
-              onClick={() => setShowExportPanel(true)}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium"
-              disabled={project.clips.length === 0}
-            >
-              Export
-            </button>
-          </div>
-        </div>
+      {/* Menu bar & header */}
+      <header className="bg-slate-800 border-b border-slate-700 px-4 py-0 flex-shrink-0 h-11 flex items-center gap-6">
+        <h1 className="text-lg font-bold text-white tracking-tight pr-2 border-r border-slate-600">Vidzaro</h1>
+        <MenuBar
+          onNewProject={handleNewProject}
+          onOpen={handleLoad}
+          onSave={handleSave}
+          onSaveAs={handleSave}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onDeleteSelected={handleDeleteSelected}
+          onDeselect={handleDeselect}
+          hasSelection={!!selectedClipId}
+          onStartRecording={() => setShowRecorder(true)}
+          onExport={() => setShowExportPanel(true)}
+          canExport={project.clips.length > 0}
+          onKeyboardShortcuts={handleKeyboardShortcuts}
+          onAbout={handleAbout}
+          onResetTimelineHeight={handleResetTimelineHeight}
+        />
+        <input
+          type="text"
+          value={project.name}
+          onChange={(e) => setProjectName(e.target.value)}
+          className="ml-auto bg-slate-900 border border-slate-700 px-3 py-1.5 rounded text-sm focus:outline-none focus:border-blue-500 w-52 placeholder-slate-500"
+          placeholder="Project name"
+        />
       </header>
 
       {/* Main Content Area (Upper Section) */}
