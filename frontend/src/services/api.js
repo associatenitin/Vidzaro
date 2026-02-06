@@ -39,6 +39,16 @@ export function getVideoUrl(videoId) {
   return `${API_BASE_URL}/video/${videoId}`;
 }
 
+// Get video thumbnails
+export async function getVideoThumbnails(videoId) {
+  return api.get(`/video/${videoId}/thumbnails`);
+}
+
+// Get absolute thumbnail URL
+export function getThumbnailUrl(thumbnailPath) {
+  return `${import.meta.env.VITE_API_URL || ''}${thumbnailPath}`;
+}
+
 // Trim video
 export async function trimVideo(videoId, startTime, duration) {
   return api.post('/video/trim', {

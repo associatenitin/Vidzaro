@@ -1,11 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { getVideoThumbnails, getThumbnailUrl } from '../../services/api';
 
 export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, isDragging }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
+  const [thumbnails, setThumbnails] = useState([]);
+
+  useEffect(() => {
+    const fetchThumbnails = async () => {
+      try {
+        const response = await getVideoThumbnails(clip.videoId);
+        setThumbnails(response.data);
+      } catch (error) {
+        console.error('Failed to fetch thumbnails:', error);
+      }
+    };
+    fetchThumbnails();
+  }, [clip.videoId]);
+
+  const visibleThumbnails = useMemo(() => {
+    if (thumbnails.length === 0) return [];
+
+    const clipStart = clip.trimStart || 0;
+    const clipEnd = clip.trimEnd || clip.endTime;
+    const duration = clipEnd - clipStart;
+
+    // Calculate how many thumbnails we can fit
+    const thumbWidth = 160; // Base width of thumbnail in pixels at 1:1
+    const scaledThumbWidth = (thumbWidth / 160) * 90 * (pixelsPerSecond / 50); // Rough scaling
+    const numThumbs = Math.max(1, Math.floor(width / 80)); // Show a thumb every 80px roughly
+
+    const selectedThumbs = [];
+    for (let i = 0; i < numThumbs; i++) {
+      const timeOffset = clipStart + (i * (duration / numThumbs));
+      const index = Math.floor(timeOffset); // Assuming 1 thumb per second
+      if (thumbnails[index]) {
+        selectedThumbs.push(thumbnails[index]);
+      }
+    }
+    return selectedThumbs;
+  }, [thumbnails, clip.trimStart, clip.trimEnd, clip.endTime, width]);
 
   const {
     attributes,
@@ -73,36 +110,67 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     <div
       ref={setNodeRef}
       style={style}
-      className={`absolute top-2 bottom-2 bg-blue-600 rounded border-2 border-blue-400 cursor-move ${
-        isResizing ? 'cursor-ew-resize' : ''
-      }`}
+      className={`absolute top-2 bottom-2 bg-slate-700/80 backdrop-blur rounded overflow-hidden border-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : clip.filter ? 'border-yellow-500' : 'border-blue-400'
+        }`}
       {...attributes}
       {...listeners}
     >
+      {/* Thumbnails Background */}
+      <div className="absolute inset-0 flex pointer-events-none opacity-40">
+        {visibleThumbnails.map((thumb, i) => (
+          <img
+            key={i}
+            src={getThumbnailUrl(thumb)}
+            alt=""
+            className="h-full object-cover"
+            style={{ width: `${100 / visibleThumbnails.length}%` }}
+          />
+        ))}
+      </div>
+
       {/* Left resize handle */}
       <div
         className="absolute left-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          handleResizeStart('left')(e);
-        }}
+        onMouseDown={handleResizeStart('left')}
       />
 
       {/* Clip content */}
-      <div className="absolute inset-2 flex items-center justify-center text-white text-xs font-medium pointer-events-none">
-        <div className="text-center">
-          <div className="truncate max-w-full">{clip.originalName || clip.filename}</div>
-          <div className="text-blue-200">{formatDuration(clipDuration)}</div>
+      <div className="absolute inset-2 flex flex-col items-center justify-between text-white text-[10px] font-medium pointer-events-none">
+        <div className="truncate w-full text-center drop-shadow-md">
+          {clip.originalName || clip.filename}
         </div>
+
+        <div className="flex items-center gap-1">
+          <span className="bg-black/50 px-1 rounded">{formatDuration(clipDuration)}</span>
+          {clip.filter && (
+            <span className="bg-yellow-500 text-black px-1 rounded uppercase text-[8px] font-bold">
+              {clip.filter}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Filter selector - visible on hover or if filter active */}
+      <div
+        className="absolute top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-20"
+        onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
+      >
+        <select
+          value={clip.filter || ''}
+          onChange={(e) => onUpdate({ filter: e.target.value || null })}
+          className="bg-slate-900/90 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+        >
+          <option value="">No Filter</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="sepia">Sepia</option>
+          <option value="invert">Invert</option>
+        </select>
       </div>
 
       {/* Right resize handle */}
       <div
         className="absolute right-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          handleResizeStart('right')(e);
-        }}
+        onMouseDown={handleResizeStart('right')}
       />
 
       {/* Remove button */}
@@ -111,7 +179,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           e.stopPropagation();
           onRemove();
         }}
-        className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 hover:bg-red-700 rounded-full flex items-center justify-center text-white text-xs font-bold z-20"
+        className="absolute top-1 right-1 w-4 h-4 bg-red-600 hover:bg-red-700 rounded-full flex items-center justify-center text-white text-[10px] font-bold z-20 opacity-0 group-hover:opacity-100 transition-opacity"
         title="Remove clip"
       >
         ×

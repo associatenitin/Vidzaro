@@ -25,20 +25,20 @@ export async function getVideoInfo(filePath) {
       format: metadata.format.format_name,
       video: videoStream
         ? {
-            codec: videoStream.codec_name,
-            width: videoStream.width,
-            height: videoStream.height,
-            fps: videoStream.r_frame_rate
-              ? parseFloat(videoStream.r_frame_rate.split('/').reduce((a, b) => parseFloat(a) / parseFloat(b))) || 30
-              : 30,
-          }
+          codec: videoStream.codec_name,
+          width: videoStream.width,
+          height: videoStream.height,
+          fps: videoStream.r_frame_rate
+            ? parseFloat(videoStream.r_frame_rate.split('/').reduce((a, b) => parseFloat(a) / parseFloat(b))) || 30
+            : 30,
+        }
         : null,
       audio: audioStream
         ? {
-            codec: audioStream.codec_name,
-            sampleRate: audioStream.sample_rate,
-            channels: audioStream.channels,
-          }
+          codec: audioStream.codec_name,
+          sampleRate: audioStream.sample_rate,
+          channels: audioStream.channels,
+        }
         : null,
     };
   } catch (error) {
@@ -127,8 +127,32 @@ export async function concatVideos(videoPaths, outputPath, concatFile) {
 }
 
 /**
+ * Generate thumbnails for a video at fixed intervals
+ */
+export async function generateThumbnails(videoPath, outputDir, interval = 1) {
+  if (!(await fileExists(videoPath))) {
+    throw new Error(`Video file not found: ${videoPath}`);
+  }
+
+  const videoInfo = await getVideoInfo(videoPath);
+  const duration = videoInfo.duration;
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .screenshots({
+        count: Math.ceil(duration / interval),
+        folder: outputDir,
+        filename: 'thumb-%i.png',
+        size: '160x90'
+      })
+      .on('end', () => resolve())
+      .on('error', (err) => reject(new Error(`Thumbnail generation error: ${err.message}`)));
+  });
+}
+
+/**
  * Export final video from project data
- * Applies trims and concatenates clips in order
+ * Applies trims, filters, and concatenates clips in order
  */
 export async function exportVideo(projectData, outputPath, tempDir) {
   const fs = await import('fs/promises');
@@ -147,8 +171,36 @@ export async function exportVideo(projectData, outputPath, tempDir) {
       const startTime = clip.trimStart || 0;
       const clipDuration = (clip.trimEnd || clip.endTime) - startTime;
 
-      // Trim the clip
-      await trimVideo(clip.videoPath, trimmedPath, startTime, clipDuration);
+      // Prepare FFmpeg command for the clip
+      let command = ffmpeg(clip.videoPath)
+        .seekInput(startTime)
+        .duration(clipDuration);
+
+      // Apply filter if specified
+      if (clip.filter) {
+        switch (clip.filter) {
+          case 'grayscale':
+            command = command.videoFilters('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3');
+            break;
+          case 'sepia':
+            command = command.videoFilters('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131');
+            break;
+          case 'invert':
+            command = command.videoFilters('negate');
+            break;
+        }
+      } else {
+        command = command.outputOptions('-c copy');
+      }
+
+      // Trim and process the clip
+      await new Promise((resolve, reject) => {
+        command
+          .output(trimmedPath)
+          .on('end', () => resolve(trimmedPath))
+          .on('error', (err) => reject(new Error(`FFmpeg processing error for clip ${clip.id}: ${err.message}`)))
+          .run();
+      });
       trimmedClips.push(trimmedPath);
 
       // Add to concat list
@@ -164,15 +216,15 @@ export async function exportVideo(projectData, outputPath, tempDir) {
 
     // Cleanup temporary files
     for (const tempFile of trimmedClips) {
-      await fs.unlink(tempFile).catch(() => {});
+      await fs.unlink(tempFile).catch(() => { });
     }
-    await fs.unlink(concatFilePath).catch(() => {});
+    await fs.unlink(concatFilePath).catch(() => { });
 
     return outputPath;
   } catch (error) {
     // Cleanup on error
     for (const tempFile of trimmedClips) {
-      await fs.unlink(tempFile).catch(() => {});
+      await fs.unlink(tempFile).catch(() => { });
     }
     throw error;
   }

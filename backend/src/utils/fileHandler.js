@@ -10,12 +10,14 @@ const ROOT_DIR = path.join(__dirname, '../../');
 export const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
 export const PROJECTS_DIR = path.join(ROOT_DIR, 'projects');
 export const EXPORTS_DIR = path.join(ROOT_DIR, 'exports');
+export const THUMBNAILS_DIR = path.join(ROOT_DIR, 'thumbnails');
 
 // Ensure directories exist
 export async function ensureDirectories() {
   await fs.mkdir(UPLOADS_DIR, { recursive: true });
   await fs.mkdir(PROJECTS_DIR, { recursive: true });
   await fs.mkdir(EXPORTS_DIR, { recursive: true });
+  await fs.mkdir(THUMBNAILS_DIR, { recursive: true });
 }
 
 // Get file extension

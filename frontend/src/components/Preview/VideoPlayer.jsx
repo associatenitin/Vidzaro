@@ -77,12 +77,22 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
 
   const videoUrl = getVideoUrl(currentClipInfo.clip.videoId);
 
+  const getFilterStyle = (filter) => {
+    switch (filter) {
+      case 'grayscale': return 'grayscale(100%)';
+      case 'sepia': return 'sepia(100%)';
+      case 'invert': return 'invert(100%)';
+      default: return 'none';
+    }
+  };
+
   return (
     <div className="w-full max-w-4xl">
       <video
         ref={videoRef}
         src={videoUrl}
         className="w-full rounded-lg shadow-2xl"
+        style={{ filter: getFilterStyle(currentClipInfo.clip.filter) }}
         controls
         preload="metadata"
       />

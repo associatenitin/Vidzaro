@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
-import { UPLOADS_DIR } from '../utils/fileHandler.js';
+import { UPLOADS_DIR, THUMBNAILS_DIR } from '../utils/fileHandler.js';
 import { validateTimestamp, validateDuration } from '../utils/validation.js';
-import { getVideoInfo, trimVideo, splitVideo } from '../services/ffmpegService.js';
+import { getVideoInfo, trimVideo, splitVideo, generateThumbnails } from '../services/ffmpegService.js';
 import { fileExists, deleteFile } from '../utils/fileHandler.js';
 import fs from 'fs';
 
@@ -23,6 +23,43 @@ router.get('/:id/info', async (req, res, next) => {
 
     const info = await getVideoInfo(videoPath);
     res.json(info);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/video/:id/thumbnails
+ * Generate and get thumbnails for a video
+ */
+router.get('/:id/thumbnails', async (req, res, next) => {
+  try {
+    const videoId = req.params.id;
+    const videoPath = path.join(UPLOADS_DIR, videoId);
+    const videoThumbDir = path.join(THUMBNAILS_DIR, videoId);
+
+    if (!(await fileExists(videoPath))) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Create thumbnail directory for this video if it doesn't exist
+    if (!(await fileExists(videoThumbDir))) {
+      await fs.promises.mkdir(videoThumbDir, { recursive: true });
+      await generateThumbnails(videoPath, videoThumbDir);
+    }
+
+    // List thumbnails
+    const files = await fs.promises.readdir(videoThumbDir);
+    const thumbnails = files
+      .filter(f => f.endsWith('.png'))
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/\d+/)[0]);
+        const numB = parseInt(b.match(/\d+/)[0]);
+        return numA - numB;
+      })
+      .map(f => `/thumbnails/${videoId}/${f}`);
+
+    res.json(thumbnails);
   } catch (error) {
     next(error);
   }

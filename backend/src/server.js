@@ -22,6 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 // Static file serving for uploaded videos and exports
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 app.use('/exports', express.static(path.join(__dirname, '../../exports')));
+app.use('/thumbnails', express.static(path.join(__dirname, '../../thumbnails')));
 
 // Routes
 app.use('/api/upload', uploadRoutes);
