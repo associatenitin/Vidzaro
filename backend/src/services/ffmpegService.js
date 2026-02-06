@@ -1,4 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
+import path from 'path';
 import { promisify } from 'util';
 import { fileExists } from '../utils/fileHandler.js';
 
@@ -151,6 +152,25 @@ export async function generateThumbnails(videoPath, outputDir, interval = 1) {
 }
 
 /**
+ * Generate waveform image for a video
+ */
+export async function generateWaveform(videoPath, outputDir) {
+  if (!(await fileExists(videoPath))) {
+    throw new Error(`Video file not found: ${videoPath}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .complexFilter('showwavespic=s=2048x120:colors=cyan|blue')
+      .output(path.join(outputDir, 'waveform.png'))
+      .frames(1)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(new Error(`Waveform generation error: ${err.message}`)))
+      .run();
+  });
+}
+
+/**
  * Export final video from project data
  * Applies trims, filters, and concatenates clips in order
  */
@@ -158,74 +178,101 @@ export async function exportVideo(projectData, outputPath, tempDir) {
   const fs = await import('fs/promises');
   const path = await import('path');
 
-  // Create temporary trimmed clips
-  const trimmedClips = [];
-  const concatList = [];
+  const processedClips = [];
+  const inputs = [];
 
   try {
+    // 1. Process each clip individually (trim, filters, speed, volume)
     for (let i = 0; i < projectData.clips.length; i++) {
       const clip = projectData.clips[i];
-      const trimmedPath = path.join(tempDir, `trimmed-${clip.id}.mp4`);
+      const processedPath = path.join(tempDir, `processed-${clip.id}.mp4`);
 
-      // Calculate trim parameters
       const startTime = clip.trimStart || 0;
       const clipDuration = (clip.trimEnd || clip.endTime) - startTime;
 
-      // Prepare FFmpeg command for the clip
       let command = ffmpeg(clip.videoPath)
         .seekInput(startTime)
         .duration(clipDuration);
 
-      // Apply filter if specified
-      if (clip.filter) {
-        switch (clip.filter) {
-          case 'grayscale':
-            command = command.videoFilters('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3');
-            break;
-          case 'sepia':
-            command = command.videoFilters('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131');
-            break;
-          case 'invert':
-            command = command.videoFilters('negate');
-            break;
-        }
-      } else {
-        command = command.outputOptions('-c copy');
+      let videoFilters = [];
+      let audioFilters = [];
+
+      if (clip.speed && clip.speed !== 1) {
+        videoFilters.push(`setpts=${1 / clip.speed}*PTS`);
+        audioFilters.push(`atempo=${clip.speed}`);
       }
 
-      // Trim and process the clip
+      if (clip.volume !== undefined && clip.volume !== 1) {
+        audioFilters.push(`volume=${clip.volume}`);
+      }
+
+      if (clip.filter) {
+        switch (clip.filter) {
+          case 'grayscale': videoFilters.push('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3'); break;
+          case 'sepia': videoFilters.push('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131'); break;
+          case 'invert': videoFilters.push('negate'); break;
+        }
+      }
+
+      if (clip.text) {
+        const escapedText = clip.text.replace(/'/g, "'\\''").replace(/,/g, '\\,');
+        videoFilters.push(`drawtext=text='${escapedText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2:borderw=2:bordercolor=black`);
+      }
+
+      if (videoFilters.length > 0) command = command.videoFilters(videoFilters);
+      if (audioFilters.length > 0) command = command.audioFilters(audioFilters);
+
       await new Promise((resolve, reject) => {
-        command
-          .output(trimmedPath)
-          .on('end', () => resolve(trimmedPath))
-          .on('error', (err) => reject(new Error(`FFmpeg processing error for clip ${clip.id}: ${err.message}`)))
-          .run();
+        command.output(processedPath).on('end', resolve).on('error', reject).run();
       });
-      trimmedClips.push(trimmedPath);
 
-      // Add to concat list
-      concatList.push(`file '${trimmedPath.replace(/\\/g, '/')}'`);
+      processedClips.push({ ...clip, processedPath });
     }
 
-    // Create concat file
-    const concatFilePath = path.join(tempDir, 'concat.txt');
-    await fs.writeFile(concatFilePath, concatList.join('\n'));
+    // 2. Build filter complex for final assembly
+    // We'll create a black background base first
+    const maxEnd = Math.max(...processedClips.map(c => (c.startPos || 0) + ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1)), 1);
 
-    // Concatenate all clips
-    await concatVideos(trimmedClips, outputPath, concatFilePath);
+    let filterGraph = [`color=s=1920x1080:d=${maxEnd}:c=black[vbase]`, `anullsrc=r=44100:cl=stereo:d=${maxEnd}[abase]`];
+    let vIn = '[vbase]';
+    let aIn = '[abase]';
 
-    // Cleanup temporary files
-    for (const tempFile of trimmedClips) {
-      await fs.unlink(tempFile).catch(() => { });
-    }
-    await fs.unlink(concatFilePath).catch(() => { });
+    // Sort by track index so lower tracks are processed first (drawn under)
+    const sortedProcessed = [...processedClips].sort((a, b) => (a.track || 0) - (b.track || 0));
 
+    let finalCommand = ffmpeg();
+    sortedProcessed.forEach((c, i) => {
+      finalCommand = finalCommand.input(c.processedPath);
+      const startMs = Math.round((c.startPos || 0) * 1000);
+
+      // Video overlay
+      filterGraph.push(`[${i}:v]setpts=PTS-STARTPTS+${c.startPos || 0}/TB[v${i}]`);
+      filterGraph.push(`${vIn}[v${i}]overlay=shortest=0:eof_action=pass[vnext${i}]`);
+      vIn = `[vnext${i}]`;
+
+      // Audio delay and mix
+      filterGraph.push(`[${i}:a]adelay=${startMs}|${startMs}[a${i}]`);
+      filterGraph.push(`${aIn}[a${i}]amix=inputs=2:duration=longest[anext${i}]`);
+      aIn = `[anext${i}]`;
+    });
+
+    await new Promise((resolve, reject) => {
+      finalCommand
+        .complexFilter(filterGraph.concat([`${vIn}copy[vfinal]`, `${aIn}copy[afinal]`]))
+        .map('[vfinal]')
+        .map('[afinal]')
+        .outputOptions(['-c:v libx264', '-preset fast', '-crf 23', '-c:a aac', '-b:a 192k'])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', (err) => reject(new Error(`FFmpeg assembly error: ${err.message}`)))
+        .run();
+    });
+
+    // Clean up
+    for (const c of processedClips) await fs.unlink(c.processedPath).catch(() => { });
     return outputPath;
   } catch (error) {
-    // Cleanup on error
-    for (const tempFile of trimmedClips) {
-      await fs.unlink(tempFile).catch(() => { });
-    }
+    for (const c of processedClips) await fs.unlink(c.processedPath).catch(() => { });
     throw error;
   }
 }

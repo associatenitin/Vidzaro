@@ -49,6 +49,11 @@ export function getThumbnailUrl(thumbnailPath) {
   return `${import.meta.env.VITE_API_URL || ''}${thumbnailPath}`;
 }
 
+// Get waveform URL
+export function getWaveformUrl(videoId) {
+  return `${API_BASE_URL}/video/${videoId}/waveform`;
+}
+
 // Trim video
 export async function trimVideo(videoId, startTime, duration) {
   return api.post('/video/trim', {

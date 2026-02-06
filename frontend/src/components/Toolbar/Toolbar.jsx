@@ -1,4 +1,4 @@
-export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause }) {
+export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -28,10 +28,28 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause }
         )}
       </button>
 
-      <div className="flex items-center gap-2 text-sm text-slate-400">
+      <div className="flex items-center gap-2 text-sm text-slate-400 font-mono w-24">
         <span>{formatTime(currentTime)}</span>
-        <span>/</span>
-        <span>--:--</span>
+      </div>
+
+      <div className="h-6 w-px bg-slate-700"></div>
+
+      {/* Tools */}
+      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
+        <button
+          onClick={() => onToolChange && onToolChange('select')}
+          className={`p-1.5 rounded ${activeTool === 'select' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-600'}`}
+          title="Selection Tool (V)"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+        </button>
+        <button
+          onClick={() => onToolChange && onToolChange('ripple')}
+          className={`p-1.5 rounded ${activeTool === 'ripple' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-600'}`}
+          title="Ripple Edit (B)"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+        </button>
       </div>
 
       <div className="flex-1"></div>

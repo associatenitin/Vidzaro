@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { UPLOADS_DIR, THUMBNAILS_DIR } from '../utils/fileHandler.js';
 import { validateTimestamp, validateDuration } from '../utils/validation.js';
-import { getVideoInfo, trimVideo, splitVideo, generateThumbnails } from '../services/ffmpegService.js';
+import { getVideoInfo, trimVideo, splitVideo, generateThumbnails, generateWaveform } from '../services/ffmpegService.js';
 import { fileExists, deleteFile } from '../utils/fileHandler.js';
 import fs from 'fs';
 
@@ -64,6 +64,38 @@ router.get('/:id/thumbnails', async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * GET /api/video/:id/waveform
+ * Generate and get waveform image for a video
+ */
+router.get('/:id/waveform', async (req, res, next) => {
+  try {
+    const videoId = req.params.id;
+    const videoPath = path.join(UPLOADS_DIR, videoId);
+    const videoThumbDir = path.join(THUMBNAILS_DIR, videoId);
+    const waveformPath = path.join(videoThumbDir, 'waveform.png');
+
+    if (!(await fileExists(videoPath))) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Create thumbnail directory if needed
+    if (!(await fileExists(videoThumbDir))) {
+      await fs.promises.mkdir(videoThumbDir, { recursive: true });
+    }
+
+    // Generate waveform if it doesn't exist
+    if (!(await fileExists(waveformPath))) {
+      await generateWaveform(videoPath, videoThumbDir);
+    }
+
+    res.sendFile(waveformPath);
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 /**
  * GET /api/video/:id

@@ -5,26 +5,33 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
 
-  // Calculate which clip should be playing based on currentTime
-  const getCurrentClip = () => {
-    if (!project.clips || project.clips.length === 0) return null;
+  // Calculate which clips should be active based on currentTime
+  const getActiveClips = () => {
+    if (!project.clips || project.clips.length === 0) return [];
 
-    let accumulatedTime = 0;
-    for (const clip of project.clips.sort((a, b) => a.order - b.order)) {
-      const clipDuration = (clip.trimEnd || clip.endTime) - (clip.trimStart || 0);
-      if (currentTime >= accumulatedTime && currentTime < accumulatedTime + clipDuration) {
+    return project.clips
+      .filter(clip => {
+        // Check if track is hidden
+        const track = project.tracks?.find(t => t.id === (clip.track || 0));
+        if (track?.hidden) return false;
+
+        const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+        const start = clip.startPos || 0;
+        return currentTime >= start && currentTime < start + clipDuration;
+      })
+      .sort((a, b) => (b.track || 0) - (a.track || 0)) // Higher track on top
+      .map(clip => {
+        const start = clip.startPos || 0;
         return {
           clip,
-          clipStartTime: accumulatedTime,
-          clipLocalTime: currentTime - accumulatedTime + (clip.trimStart || 0),
+          clipStartTimeOnTimeline: start,
+          clipLocalTime: (currentTime - start) * (clip.speed || 1) + (clip.trimStart || 0),
         };
-      }
-      accumulatedTime += clipDuration;
-    }
-    return null;
+      });
   };
 
-  const currentClipInfo = getCurrentClip();
+  const activeClips = getActiveClips();
+  const currentClipInfo = activeClips[0] || null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -40,6 +47,14 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
 
     const handlePlay = () => onPlayPause(true);
     const handlePause = () => onPlayPause(false);
+
+    // Apply speed and volume
+    video.playbackRate = currentClipInfo.clip.speed || 1;
+
+    // Check track mute
+    const track = project.tracks?.find(t => t.id === (currentClipInfo.clip.track || 0));
+    const isTrackMuted = track?.muted || false;
+    video.volume = isTrackMuted ? 0 : (currentClipInfo.clip.volume === undefined ? 1 : currentClipInfo.clip.volume);
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('play', handlePlay);
@@ -61,10 +76,18 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
     if (Math.abs(video.currentTime - targetTime) > 0.1) {
       isSeekingRef.current = true;
       video.currentTime = targetTime;
+      // Re-apply playback rate after seek as some browsers reset it
+      video.playbackRate = currentClipInfo.clip.speed || 1;
       setTimeout(() => {
         isSeekingRef.current = false;
       }, 100);
     }
+
+    // Always sync volume and speed even if not seeking
+    const track = project.tracks?.find(t => t.id === (currentClipInfo.clip.track || 0));
+    const isTrackMuted = track?.muted || false;
+    video.volume = isTrackMuted ? 0 : (currentClipInfo.clip.volume === undefined ? 1 : currentClipInfo.clip.volume);
+    video.playbackRate = currentClipInfo.clip.speed || 1;
   }, [currentTime, currentClipInfo]);
 
   if (!currentClipInfo) {
@@ -87,7 +110,7 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
   };
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full max-w-4xl relative group">
       <video
         ref={videoRef}
         src={videoUrl}
@@ -96,6 +119,14 @@ export default function VideoPlayer({ project, currentTime, onTimeUpdate, onPlay
         controls
         preload="metadata"
       />
+
+      {currentClipInfo.clip.text && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="text-white text-4xl font-bold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-center px-10">
+            {currentClipInfo.clip.text}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
