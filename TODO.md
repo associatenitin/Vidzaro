@@ -152,7 +152,7 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
    - [x] Implement keyboard shortcuts (#4) ✅
    
 2. **High Impact UX:**
-   - [ ] Add clip selection (#6)
+   - [x] Add clip selection (#6) ✅
    - [x] Add playback controls (#5) ✅
    - [x] Add progress bar on preview (#7) ✅
    
@@ -181,7 +181,7 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
 | Auto-Save | ✅ Complete | 2026-02-06 | 2026-02-06 |
 | Track Management | ✅ Complete | 2026-02-06 | 2026-02-06 |
 | Export Options | ✅ Complete | 2026-02-06 | 2026-02-06 |
-| Clip Selection | ⏳ In Progress | 2026-02-06 | - |
+| Clip Selection | ✅ Complete | 2026-02-06 | 2026-02-06 |
 
 ---
 

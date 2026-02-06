@@ -48,9 +48,9 @@ export async function finalizeRecording(file, options = {}, onProgress) {
 
   return api.post('/recordings/finalize', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: onProgress && (e) => {
+    onUploadProgress: onProgress && ((e) => {
       if (e.total) onProgress(Math.round((e.loaded * 100) / e.total));
-    },
+    }),
   });
 }
 
