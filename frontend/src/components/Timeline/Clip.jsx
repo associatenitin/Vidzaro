@@ -272,10 +272,26 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 flex-1"
           >
-            <option value="">No Filter</option>
-            <option value="grayscale">Grayscale</option>
-            <option value="sepia">Sepia</option>
-            <option value="invert">Invert</option>
+            <optgroup label="Basic">
+              <option value="">No Filter</option>
+              <option value="grayscale">Grayscale</option>
+              <option value="sepia">Sepia</option>
+              <option value="invert">Invert</option>
+            </optgroup>
+            <optgroup label="Adjustments">
+              <option value="blur">Blur</option>
+              <option value="brightness">Brighten</option>
+              <option value="darken">Darken</option>
+              <option value="contrast">High Contrast</option>
+              <option value="saturate">Saturate</option>
+              <option value="desaturate">Desaturate</option>
+            </optgroup>
+            <optgroup label="Color Effects">
+              <option value="hue-rotate">Hue Shift</option>
+              <option value="vintage">Vintage</option>
+              <option value="cool">Cool Tone</option>
+              <option value="warm">Warm Tone</option>
+            </optgroup>
           </select>
 
           <select
@@ -284,10 +300,15 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
           >
+            <option value="0.25">0.25x</option>
             <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
             <option value="1">1.0x</option>
+            <option value="1.25">1.25x</option>
             <option value="1.5">1.5x</option>
             <option value="2">2.0x</option>
+            <option value="3">3.0x</option>
+            <option value="4">4.0x</option>
           </select>
         </div>
 

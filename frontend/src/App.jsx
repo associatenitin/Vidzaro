@@ -106,6 +106,71 @@ function App() {
     };
   }, [isResizing]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger shortcuts when typing in inputs
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        return;
+      }
+
+      // Space - Play/Pause
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsPlaying(!isPlaying);
+      }
+
+      // Ctrl+Z - Undo
+      if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        if (canUndo) undo();
+      }
+
+      // Ctrl+Y or Ctrl+Shift+Z - Redo
+      if ((e.ctrlKey && e.code === 'KeyY') || (e.ctrlKey && e.shiftKey && e.code === 'KeyZ')) {
+        e.preventDefault();
+        if (canRedo) redo();
+      }
+
+      // V - Select tool
+      if (e.code === 'KeyV' && !e.ctrlKey) {
+        setActiveTool('select');
+      }
+
+      // B - Ripple tool
+      if (e.code === 'KeyB' && !e.ctrlKey) {
+        setActiveTool('ripple');
+      }
+
+      // S - Split at playhead
+      if (e.code === 'KeyS' && !e.ctrlKey) {
+        handleSplit();
+      }
+
+      // Left/Right arrows - Seek by small amount
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : 1 / 30; // 1 second if shift, else 1 frame (30fps)
+        setCurrentTime(Math.max(0, currentTime - step));
+      }
+
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : 1 / 30;
+        setCurrentTime(currentTime + step);
+      }
+
+      // Home - Go to start
+      if (e.code === 'Home') {
+        e.preventDefault();
+        setCurrentTime(0);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, canUndo, canRedo, undo, redo, setActiveTool, currentTime]);
+
   const handleSave = () => {
     setShowSaveDialog(true);
   };
@@ -123,7 +188,7 @@ function App() {
     if (projectData.name !== project.name) {
       setProjectName(projectData.name);
     }
-    
+
     // Optionally also save to server for backup/cloud sync
     try {
       await saveProject(projectData);

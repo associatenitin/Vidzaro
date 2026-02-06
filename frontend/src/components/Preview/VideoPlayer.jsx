@@ -5,6 +5,13 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
   const [previewTime, setPreviewTime] = useState(0);
+  const progressRef = useRef(null);
+
+  // Calculate total duration from clips
+  const totalDuration = project.clips.reduce((max, clip) => {
+    const clipEnd = (clip.startPos || 0) + (((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1));
+    return Math.max(max, clipEnd);
+  }, 0) || (previewAsset?.duration || 0);
 
   // Calculate which clips should be active based on currentTime
   const getActiveClips = () => {
@@ -46,6 +53,26 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
       setPreviewTime(0);
     }
   }, [previewAsset?.id]);
+
+  // Format time as mm:ss
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Handle progress bar click for seeking
+  const handleProgressClick = (e) => {
+    if (!progressRef.current || !onTimeUpdate) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const newTime = ratio * totalDuration;
+    onTimeUpdate(newTime);
+  };
+
+  const displayTime = showPreview ? previewTime : currentTime;
+  const displayDuration = showPreview ? (previewAsset?.duration || 0) : totalDuration;
+  const progress = displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
 
   return (
     <div className="w-full max-w-4xl relative group bg-black rounded-lg shadow-2xl overflow-hidden aspect-video">
@@ -98,7 +125,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
               />
             </div>
           ) : (
-            <div className="text-slate-500 font-medium">No active video</div>
+            <div className="w-full h-full flex items-center justify-center text-slate-500 font-medium">No active video</div>
           )}
 
           {/* 3. Global Overlays */}
@@ -111,6 +138,94 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           )}
         </>
       )}
+
+      {/* Playback Controls Overlay - appears on hover */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-4">
+        {/* Progress Bar */}
+        <div
+          ref={progressRef}
+          className="w-full h-1.5 bg-slate-600/70 rounded-full mb-3 cursor-pointer hover:h-2 transition-all"
+          onClick={handleProgressClick}
+        >
+          <div
+            className="h-full bg-blue-500 rounded-full relative transition-all"
+            style={{ width: `${progress}%` }}
+          >
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          </div>
+        </div>
+
+        {/* Controls Row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Skip to Start */}
+            <button
+              onClick={() => onTimeUpdate && onTimeUpdate(0)}
+              className="p-1.5 text-white/80 hover:text-white transition-colors"
+              title="Skip to start (Home)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M3 5a1 1 0 011-1h2a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V5zm6 0a1 1 0 01.707.293l4 4a1 1 0 010 1.414l-4 4A1 1 0 019 14V6a1 1 0 01.707-.707z" transform="scale(-1,1) translate(-20,0)" />
+              </svg>
+            </button>
+
+            {/* Previous Frame */}
+            <button
+              onClick={() => onTimeUpdate && onTimeUpdate(Math.max(0, displayTime - 1 / 30))}
+              className="p-1.5 text-white/80 hover:text-white transition-colors"
+              title="Previous frame (←)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            {/* Play/Pause */}
+            <button
+              onClick={() => onPlayPause && onPlayPause(!isPlaying)}
+              className="p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-colors"
+              title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+            >
+              {isPlaying ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+
+            {/* Next Frame */}
+            <button
+              onClick={() => onTimeUpdate && onTimeUpdate(Math.min(displayDuration, displayTime + 1 / 30))}
+              className="p-1.5 text-white/80 hover:text-white transition-colors"
+              title="Next frame (→)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+
+            {/* Skip to End */}
+            <button
+              onClick={() => onTimeUpdate && onTimeUpdate(displayDuration)}
+              className="p-1.5 text-white/80 hover:text-white transition-colors"
+              title="Skip to end (End)"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M3 5a1 1 0 011-1h2a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V5zm6 0a1 1 0 01.707.293l4 4a1 1 0 010 1.414l-4 4A1 1 0 019 14V6a1 1 0 01.707-.707z" transform="translate(8,0)" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Time Display */}
+          <div className="text-white/90 text-sm font-mono">
+            {formatTime(displayTime)} / {formatTime(displayDuration)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -171,8 +286,9 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project })
   );
 }
 
-function VideoLayer({ clipInfo, currentTime, project }) {
-  const { clip } = clipInfo;
+function VideoLayer({ clipInfo, currentTime, isPlaying, project }) {
+  const videoRef = useRef(null);
+  const { clip, clipLocalTime } = clipInfo;
   const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
   const videoUrl = getVideoUrl(clip.videoId);
 
@@ -181,9 +297,41 @@ function VideoLayer({ clipInfo, currentTime, project }) {
       case 'grayscale': return 'grayscale(100%)';
       case 'sepia': return 'sepia(100%)';
       case 'invert': return 'invert(100%)';
+      case 'blur': return 'blur(3px)';
+      case 'brightness': return 'brightness(1.3)';
+      case 'darken': return 'brightness(0.7)';
+      case 'contrast': return 'contrast(1.5)';
+      case 'saturate': return 'saturate(1.8)';
+      case 'desaturate': return 'saturate(0.3)';
+      case 'hue-rotate': return 'hue-rotate(90deg)';
+      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
+      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
+      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
       default: return 'none';
     }
   };
+
+  // Sync video playback with timeline
+  useEffect(() => {
+    if (isImage) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Play/Pause sync
+    if (isPlaying) {
+      video.play().catch(() => { });
+    } else {
+      video.pause();
+    }
+
+    // Time sync - seek if difference is significant
+    if (Math.abs(video.currentTime - clipLocalTime) > 0.15) {
+      video.currentTime = clipLocalTime;
+    }
+
+    // Apply playback rate
+    video.playbackRate = clip.speed || 1;
+  }, [isPlaying, clipLocalTime, clip.speed, isImage]);
 
   if (isImage) {
     return (
@@ -198,13 +346,12 @@ function VideoLayer({ clipInfo, currentTime, project }) {
 
   return (
     <video
+      ref={videoRef}
       src={videoUrl}
       className="max-w-full max-h-full"
       style={{ filter: getFilterStyle(clip.filter) }}
       muted // We handle audio in AudioLayer
-      preload="metadata"
-    // Video element here is JUST for display, sync is handled by reference to currentTime
-    // But we might need a ref to get frame accuracy
+      preload="auto"
     />
   );
 }
@@ -224,7 +371,7 @@ function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
     if (!video) return;
 
     if (isPlaying) {
-      video.play().catch(() => {});
+      video.play().catch(() => { });
     } else {
       video.pause();
     }
@@ -242,7 +389,7 @@ function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
     if (!audio) return;
 
     if (isPlaying) {
-      audio.play().catch(() => {});
+      audio.play().catch(() => { });
     } else {
       audio.pause();
     }
