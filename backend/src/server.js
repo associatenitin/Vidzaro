@@ -1,0 +1,42 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import uploadRoutes from './routes/upload.js';
+import videoRoutes from './routes/video.js';
+import exportRoutes from './routes/export.js';
+import projectRoutes from './routes/projects.js';
+import { errorHandler } from './utils/errorHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Static file serving for uploaded videos and exports
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+app.use('/exports', express.static(path.join(__dirname, '../../exports')));
+
+// Routes
+app.use('/api/upload', uploadRoutes);
+app.use('/api/video', videoRoutes);
+app.use('/api/export', exportRoutes);
+app.use('/api/projects', projectRoutes);
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Vidzaro API is running' });
+});
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
+app.listen(PORT, () => {
+  console.log(`🚀 Vidzaro backend server running on http://localhost:${PORT}`);
+});

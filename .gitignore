@@ -131,9 +131,16 @@ dist
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
-!.yarn/sdks
 !.yarn/versions
 
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Vidzaro specific
+backend/uploads/
+backend/projects/
+backend/exports/
+frontend/dist/
+frontend/node_modules/
+backend/node_modules/
