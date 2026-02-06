@@ -11,6 +11,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [waveformUrl, setWaveformUrl] = useState(null);
   const settingsPanelRef = useRef(null);
   const [isHoveringSettings, setIsHoveringSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
@@ -116,13 +117,39 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
   const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
 
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowSettings((prev) => !prev);
+  };
+
+  // Close settings when clicking outside the panel (e.g. on the clip thumbnail or elsewhere)
+  useEffect(() => {
+    if (!showSettings) return;
+    const handleClickOutside = (e) => {
+      if (settingsPanelRef.current && !settingsPanelRef.current.contains(e.target)) {
+        setShowSettings(false);
+      }
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setShowSettings(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showSettings]);
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={`absolute top-2 bottom-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : ''}`}
       {...attributes}
-      {...(isHoveringSettings ? {} : listeners)}
+      {...(isHoveringSettings || showSettings ? {} : listeners)}
+      onContextMenu={handleContextMenu}
     >
       {/* Clip container with overflow-hidden for content */}
       <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden ${clip.filter ? 'border-yellow-500' : 'border-blue-400'}`}>
@@ -190,10 +217,10 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
         />
       </div>
 
-      {/* Filter, Audio & Speed controls - visible on hover - positioned outside clip container */}
+      {/* Filter, Audio & Speed controls - visible on right-click only - positioned outside clip container */}
       <div
         ref={settingsPanelRef}
-        className="absolute -top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56"
+        className={`absolute -top-1 left-2 pointer-events-auto transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onMouseEnter={() => setIsHoveringSettings(true)}
         onMouseLeave={() => setIsHoveringSettings(false)}
         onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
@@ -202,6 +229,15 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       >
         <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Clip Settings</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="p-0.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white text-[10px]"
+            title="Close"
+          >
+            ×
+          </button>
           <div className="flex gap-1">
             <button
               onClick={(e) => {
