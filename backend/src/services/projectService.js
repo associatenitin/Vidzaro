@@ -30,6 +30,8 @@ export async function saveProject(projectData) {
     id: projectId,
     name: projectName,
     clips: projectData.clips || [],
+    assets: projectData.assets || [], // Save media library assets
+    tracks: projectData.tracks || [], // Save timeline tracks
     createdAt: projectData.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

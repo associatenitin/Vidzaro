@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
@@ -9,6 +9,8 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
   const [thumbnails, setThumbnails] = useState([]);
   const [waveformUrl, setWaveformUrl] = useState(null);
+  const settingsPanelRef = useRef(null);
+  const [isHoveringSettings, setIsHoveringSettings] = useState(false);
 
   const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
@@ -118,85 +120,106 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     <div
       ref={setNodeRef}
       style={style}
-      className={`absolute top-2 bottom-2 bg-slate-700/80 backdrop-blur rounded overflow-hidden border-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : clip.filter ? 'border-yellow-500' : 'border-blue-400'
-        }`}
+      className={`absolute top-2 bottom-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : ''}`}
       {...attributes}
-      {...listeners}
+      {...(isHoveringSettings ? {} : listeners)}
     >
-      {/* Thumbnails Background */}
-      <div className="absolute inset-0 flex pointer-events-none opacity-40">
-        {isImage ? (
-          <img
-            src={getVideoUrl(clip.videoId)}
-            alt=""
-            className="w-full h-full object-cover"
-          />
-        ) : isAudio ? (
-          <div className="w-full h-full bg-slate-800/50"></div>
-        ) : (
-          visibleThumbnails.map((thumb, i) => (
+      {/* Clip container with overflow-hidden for content */}
+      <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden ${clip.filter ? 'border-yellow-500' : 'border-blue-400'}`}>
+        {/* Thumbnails Background */}
+        <div className="absolute inset-0 flex pointer-events-none opacity-40">
+          {isImage ? (
             <img
-              key={i}
-              src={getThumbnailUrl(thumb)}
+              src={getVideoUrl(clip.videoId)}
               alt=""
-              className="h-full object-cover"
-              style={{ width: `${100 / visibleThumbnails.length}%` }}
+              className="w-full h-full object-cover"
             />
-          ))
-        )}
-      </div>
-
-      {/* Waveform Overlay */}
-      {waveformUrl && (
-        <div className="absolute inset-0 pointer-events-none opacity-80 mix-blend-screen">
-          <img
-            src={waveformUrl}
-            alt="waveform"
-            className="w-full h-full object-fill opacity-80"
-            draggable="false"
-          />
-        </div>
-      )}
-
-      {/* Left resize handle */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
-        onMouseDown={handleResizeStart('left')}
-      />
-
-      {/* Clip content */}
-      <div className="absolute inset-2 flex flex-col items-center justify-between text-white text-[10px] font-medium pointer-events-none">
-        <div className="truncate w-full text-center drop-shadow-md">
-          {clip.originalName || clip.filename || 'Untitled'}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <span className="bg-black/50 px-1 rounded">{formatDuration(clipDuration)}</span>
-          {clip.filter && (
-            <span className="bg-yellow-500 text-black px-1 rounded uppercase text-[8px] font-bold">
-              {clip.filter}
-            </span>
+          ) : isAudio ? (
+            <div className="w-full h-full bg-slate-800/50"></div>
+          ) : (
+            visibleThumbnails.map((thumb, i) => (
+              <img
+                key={i}
+                src={getThumbnailUrl(thumb)}
+                alt=""
+                className="h-full object-cover"
+                style={{ width: `${100 / visibleThumbnails.length}%` }}
+              />
+            ))
           )}
         </div>
+
+        {/* Waveform Overlay */}
+        {waveformUrl && (
+          <div className="absolute inset-0 pointer-events-none opacity-80 mix-blend-screen">
+            <img
+              src={waveformUrl}
+              alt="waveform"
+              className="w-full h-full object-fill opacity-80"
+              draggable="false"
+            />
+          </div>
+        )}
+
+        {/* Left resize handle */}
+        <div
+          className="absolute left-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
+          onMouseDown={handleResizeStart('left')}
+        />
+
+        {/* Clip content */}
+        <div className="absolute inset-2 flex flex-col items-center justify-between text-white text-[10px] font-medium pointer-events-none">
+          <div className="truncate w-full text-center drop-shadow-md">
+            {clip.originalName || clip.filename || 'Untitled'}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <span className="bg-black/50 px-1 rounded">{formatDuration(clipDuration)}</span>
+            {clip.filter && (
+              <span className="bg-yellow-500 text-black px-1 rounded uppercase text-[8px] font-bold">
+                {clip.filter}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right resize handle */}
+        <div
+          className="absolute right-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
+          onMouseDown={handleResizeStart('right')}
+        />
       </div>
 
-      {/* Filter, Audio & Speed controls - visible on hover */}
+      {/* Filter, Audio & Speed controls - visible on hover - positioned outside clip container */}
       <div
-        className="absolute top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2 z-20 bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56"
+        ref={settingsPanelRef}
+        className="absolute -top-1 left-2 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56"
+        onMouseEnter={() => setIsHoveringSettings(true)}
+        onMouseLeave={() => setIsHoveringSettings(false)}
         onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
+        onPointerDown={(e) => e.stopPropagation()} // Prevent drag start (for dnd-kit)
+        onDragStart={(e) => e.preventDefault()} // Prevent drag start
       >
         <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Clip Settings</span>
           <div className="flex gap-1">
             <button
-              onClick={() => onUpdate({ audioEnabled: !((clip.audioEnabled === undefined) ? true : clip.audioEnabled) })}
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdate({ audioEnabled: !((clip.audioEnabled === undefined) ? true : clip.audioEnabled) });
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
               className={`p-1 rounded text-[8px] ${(clip.audioEnabled === false) ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}
             >
               {clip.audioEnabled === false ? '🔇' : '🔊'}
             </button>
             {onDetachAudio && clip.videoEnabled !== false && (
               <button
-                onClick={onDetachAudio}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDetachAudio();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
                 className="p-1 rounded bg-slate-700 text-white text-[8px] hover:bg-slate-600"
                 title="Detach Audio"
               >
@@ -210,6 +233,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           <select
             value={clip.filter || ''}
             onChange={(e) => onUpdate({ filter: e.target.value || null })}
+            onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 flex-1"
           >
             <option value="">No Filter</option>
@@ -221,6 +245,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           <select
             value={clip.speed || 1}
             onChange={(e) => onUpdate({ speed: parseFloat(e.target.value) })}
+            onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
           >
             <option value="0.5">0.5x</option>
@@ -242,6 +267,9 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             step="0.05"
             value={clip.volume || 1}
             onChange={(e) => onUpdate({ volume: parseFloat(e.target.value) })}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.preventDefault()}
             className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
           />
         </div>
@@ -259,6 +287,9 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               step="0.1"
               value={clip.fadeIn || 0}
               onChange={(e) => onUpdate({ fadeIn: parseFloat(e.target.value) })}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDragStart={(e) => e.preventDefault()}
               className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
             />
           </div>
@@ -274,6 +305,9 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               step="0.1"
               value={clip.fadeOut || 0}
               onChange={(e) => onUpdate({ fadeOut: parseFloat(e.target.value) })}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDragStart={(e) => e.preventDefault()}
               className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
             />
           </div>
@@ -285,16 +319,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             placeholder="Text Overlay..."
             value={clip.text || ''}
             onChange={(e) => onUpdate({ text: e.target.value || null })}
+            onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
           />
         </div>
       </div>
-
-      {/* Right resize handle */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-2 bg-blue-400 hover:bg-blue-300 cursor-ew-resize z-10"
-        onMouseDown={handleResizeStart('right')}
-      />
 
       {/* Remove button */}
       <button

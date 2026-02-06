@@ -106,6 +106,7 @@ export function useProject() {
       videoPath: asset.path,
       filename: asset.filename,
       originalName: asset.originalName,
+      type: asset.type, // Include asset type for easier identification
       duration: asset.duration, // Max duration of source
       startTime: 0,
       endTime: asset.duration,
@@ -250,7 +251,42 @@ export function useProject() {
   }, [setProjectWithHistory]);
 
   const loadProjectData = useCallback((projectData) => {
-    setProject(projectData);
+    // Default tracks if not present
+    const defaultTracks = [
+      { id: 0, label: 'Video 1', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
+      { id: 1, label: 'Video 2', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
+      { id: 2, label: 'Audio 1', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
+      { id: 3, label: 'Audio 2', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
+    ];
+
+    // Ensure clips have all required fields with defaults
+    const loadedClips = (projectData.clips || []).map(clip => ({
+      ...clip,
+      videoEnabled: clip.videoEnabled !== undefined ? clip.videoEnabled : true,
+      audioEnabled: clip.audioEnabled !== undefined ? clip.audioEnabled : true,
+      volume: clip.volume !== undefined ? clip.volume : 1,
+      speed: clip.speed !== undefined ? clip.speed : 1,
+      trimStart: clip.trimStart !== undefined ? clip.trimStart : 0,
+      trimEnd: clip.trimEnd !== undefined ? clip.trimEnd : clip.endTime || clip.duration || 0,
+      startPos: clip.startPos !== undefined ? clip.startPos : 0,
+      fadeIn: clip.fadeIn !== undefined ? clip.fadeIn : 0,
+      fadeOut: clip.fadeOut !== undefined ? clip.fadeOut : 0,
+    }));
+
+    // Merge loaded data with defaults to ensure all required fields are present
+    const loadedProject = {
+      id: projectData.id || uuidv4(),
+      name: projectData.name || 'Untitled Project',
+      clips: loadedClips,
+      assets: projectData.assets || [], // Restore media library assets
+      tracks: projectData.tracks && projectData.tracks.length > 0 
+        ? projectData.tracks 
+        : defaultTracks, // Use saved tracks or defaults
+      createdAt: projectData.createdAt || new Date().toISOString(),
+      updatedAt: projectData.updatedAt || new Date().toISOString(),
+    };
+
+    setProject(loadedProject);
     setHistory([]);
     setFuture([]);
   }, []);
