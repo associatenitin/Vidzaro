@@ -15,7 +15,11 @@ export default function Timeline({
   onTrackUpdate,
   onDropAsset,
   onDetachAudio,
-  activeTool
+  activeTool,
+  selectedClipId,
+  onClipSelect,
+  onAddTrack,
+  onRemoveTrack
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -50,53 +54,53 @@ export default function Timeline({
   // Set up native drop listeners on track elements to bypass DndContext
   useEffect(() => {
     const trackElements = Object.values(trackRefs.current);
-    
+
     const handleNativeDrop = (e) => {
       // Prevent duplicate handling
       if (dropHandledRef.current) {
         return;
       }
-      
+
       // Only handle if this is a native HTML5 drag
       if (!e.dataTransfer || !e.dataTransfer.types || e.dataTransfer.types.length === 0) {
         return;
       }
-      
-      const hasDragData = e.dataTransfer.types.includes('application/json') || 
-                          e.dataTransfer.types.includes('text/plain');
-      
+
+      const hasDragData = e.dataTransfer.types.includes('application/json') ||
+        e.dataTransfer.types.includes('text/plain');
+
       if (hasDragData) {
         dropHandledRef.current = true; // Mark as handled
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation(); // Prevent other handlers from firing
-        
+
         // Reset the flag after a short delay
         setTimeout(() => {
           dropHandledRef.current = false;
         }, 100);
-        
+
         // Find which track this element belongs to
         const trackId = Object.keys(trackRefs.current).find(
           id => trackRefs.current[id] === e.currentTarget
         );
-        
+
         if (trackId !== undefined) {
           console.log('Native drop detected on track:', trackId);
           console.log('dataTransfer types:', e.dataTransfer.types);
           console.log('dataTransfer items:', e.dataTransfer.items?.length);
-          
+
           // Get the current onDropAsset from the latest closure
           const currentOnDropAsset = onDropAsset;
           const currentTimelineRef = timelineRef.current;
           const currentZoom = zoom;
-          
+
           console.log('Callback check:', {
             hasOnDropAsset: !!currentOnDropAsset,
             hasTimelineRef: !!currentTimelineRef,
             zoom: currentZoom
           });
-          
+
           // Try to get data - must be called synchronously during drop event
           let json = null;
           try {
@@ -107,9 +111,9 @@ export default function Timeline({
           } catch (dataError) {
             console.error('Error getting drag data:', dataError);
           }
-          
+
           console.log('Drag data retrieved:', json ? 'Yes' : 'No', json ? json.substring(0, 100) : '');
-          
+
           if (json) {
             try {
               const data = JSON.parse(json);
@@ -123,25 +127,25 @@ export default function Timeline({
                 hasId: !!data.id,
                 hasFilename: !!data.filename
               });
-              
+
               // Accept asset type OR media types (video, audio, image) with required fields
-              const isMediaAsset = (data.type === 'asset' || 
-                                   (data.type && ['video', 'audio', 'image'].includes(data.type) && data.id && data.filename));
-              
+              const isMediaAsset = (data.type === 'asset' ||
+                (data.type && ['video', 'audio', 'image'].includes(data.type) && data.id && data.filename));
+
               if (isMediaAsset && currentOnDropAsset && currentTimelineRef) {
                 const trackElement = e.currentTarget;
                 const trackRect = trackElement.getBoundingClientRect();
                 const scrollLeft = currentTimelineRef.scrollLeft;
                 const relativeX = (e.clientX - trackRect.left) + scrollLeft;
                 const time = Math.max(0, relativeX / (PIXELS_PER_SECOND * currentZoom));
-                
+
                 console.log(`Native drop: ${data.originalName || data.filename} at ${time.toFixed(2)}s on track ${trackId}, calling onDropAsset`);
                 setDragOverTrackId(null);
-                
+
                 // Call the callback
                 const position = { time, track: parseInt(trackId) };
                 console.log('Calling onDropAsset with:', { asset: data, position });
-                
+
                 try {
                   currentOnDropAsset(data, position);
                   console.log('onDropAsset called successfully');
@@ -174,19 +178,19 @@ export default function Timeline({
       if (!e.dataTransfer || !e.dataTransfer.types || e.dataTransfer.types.length === 0) {
         return;
       }
-      
-      const hasDragData = e.dataTransfer.types.includes('application/json') || 
-                          e.dataTransfer.types.includes('text/plain');
-      
+
+      const hasDragData = e.dataTransfer.types.includes('application/json') ||
+        e.dataTransfer.types.includes('text/plain');
+
       if (hasDragData) {
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy';
-        
+
         const trackId = Object.keys(trackRefs.current).find(
           id => trackRefs.current[id] === e.currentTarget
         );
-        
+
         if (trackId !== undefined) {
           setDragOverTrackId(parseInt(trackId));
         }
@@ -324,19 +328,19 @@ export default function Timeline({
 
   const handleDragOver = (e, trackId = null) => {
     // Check if this is a native HTML5 drag (has dataTransfer types)
-    const hasDragData = e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.length > 0 && 
-                       (e.dataTransfer.types.includes('application/json') || 
-                        e.dataTransfer.types.includes('text/plain'));
-    
+    const hasDragData = e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.length > 0 &&
+      (e.dataTransfer.types.includes('application/json') ||
+        e.dataTransfer.types.includes('text/plain'));
+
     if (!hasDragData) {
       // Not a native drag, might be dnd-kit drag, let it pass through
       return;
     }
-    
+
     e.preventDefault();
     // Don't stop propagation - let it bubble so drop can fire
     e.dataTransfer.dropEffect = 'copy';
-    
+
     // Update drag over track for visual feedback
     if (trackId !== null) {
       setDragOverTrackId(trackId);
@@ -347,7 +351,7 @@ export default function Timeline({
       const tracksStartY = 32; // Ruler height
       const scrollTop = timelineRef.current.scrollTop;
       const totalRelativeY = y - tracksStartY + scrollTop;
-      
+
       let currentY = 0;
       for (const track of tracks) {
         const trackHeight = track.height || 80;
@@ -369,12 +373,12 @@ export default function Timeline({
 
   const handleDrop = (e, trackId = null, trackElement = null) => {
     console.log('handleDrop called', { trackId, hasDataTransfer: !!e.dataTransfer });
-    
+
     // Check if this is a native HTML5 drag first
-    const hasDragData = e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.length > 0 && 
-                       (e.dataTransfer.types.includes('application/json') || 
-                        e.dataTransfer.types.includes('text/plain'));
-    
+    const hasDragData = e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.length > 0 &&
+      (e.dataTransfer.types.includes('application/json') ||
+        e.dataTransfer.types.includes('text/plain'));
+
     if (!hasDragData) {
       console.log('Not a native drag, ignoring drop');
       // Not a native drag, might be dnd-kit drag, let it pass through
@@ -414,7 +418,7 @@ export default function Timeline({
         // Calculate drop position
         // If we have a track element, calculate relative to it, otherwise use timelineRef
         let relativeX;
-        
+
         if (trackElement && trackId !== null) {
           // Dropping directly on track - calculate relative to track content area
           const trackRect = trackElement.getBoundingClientRect();
@@ -457,15 +461,15 @@ export default function Timeline({
 
         console.log(`Dropping asset ${data.originalName} at time ${time.toFixed(2)}s on track ${detectedTrackId}, X: ${relativeX.toFixed(0)}px`);
         setDragOverTrackId(null); // Clear drag over state
-        
+
         // Call the drop handler
         console.log('Calling onDropAsset with:', { asset: data, position: { time, track: detectedTrackId } });
         onDropAsset(data, { time, track: detectedTrackId });
       } else {
-        console.log('Drop conditions not met:', { 
-          isAsset: data.type === 'asset', 
+        console.log('Drop conditions not met:', {
+          isAsset: data.type === 'asset',
           hasOnDropAsset: !!onDropAsset,
-          dataType: data.type 
+          dataType: data.type
         });
       }
     } catch (err) {
@@ -503,8 +507,8 @@ export default function Timeline({
       </div>
 
       {/* Main Timeline Area (Sidebar + Ruler + Tracks) */}
-      <div 
-        className="flex-1 overflow-auto relative custom-scrollbar" 
+      <div
+        className="flex-1 overflow-auto relative custom-scrollbar"
         ref={timelineRef}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -589,14 +593,20 @@ export default function Timeline({
                         </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => onTrackUpdate(track.id, { muted: !track.muted })} className={`text-xs ${track.muted ? 'text-red-400' : 'text-green-400'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <button onClick={() => onTrackUpdate(track.id, { muted: !track.muted })} className={`text-[10px] ${track.muted ? 'text-red-400' : 'text-green-400'}`}>
                         {track.muted ? '🔇' : '🔊'}
                       </button>
-                      {/* Height Resizer (Simulated) */}
-                      <div className="flex-1 h-1 bg-slate-700 rounded overflow-hidden">
-                        <div className="h-full bg-slate-600" style={{ width: '70%' }}></div>
-                      </div>
+
+                      {onRemoveTrack && (
+                        <button
+                          onClick={() => onRemoveTrack(track.id)}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-900/50 text-slate-500 hover:text-red-400 text-[10px] transition-opacity"
+                          title="Delete Track"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -606,13 +616,10 @@ export default function Timeline({
                       if (el) trackRefs.current[track.id] = el;
                       else delete trackRefs.current[track.id];
                     }}
-                    className={`relative flex-1 border-b border-slate-700/50 ${
-                      track.muted ? 'bg-slate-900/50' : 'bg-slate-800/30'
-                    } ${
-                      track.locked ? 'stripes-diagonal' : ''
-                    } ${
-                      dragOverTrackId === track.id ? 'bg-blue-500/20 border-blue-500' : ''
-                    } transition-colors`}
+                    className={`relative flex-1 border-b border-slate-700/50 ${track.muted ? 'bg-slate-900/50' : 'bg-slate-800/30'
+                      } ${track.locked ? 'stripes-diagonal' : ''
+                      } ${dragOverTrackId === track.id ? 'bg-blue-500/20 border-blue-500' : ''
+                      } transition-colors`}
                     style={{ minWidth: `${timelineWidth}px` }}
                     onDragOver={(e) => handleDragOver(e, track.id)}
                     onDrop={(e) => {
@@ -652,6 +659,8 @@ export default function Timeline({
                               onRemove={() => onClipRemove(clip.id)}
                               onDetachAudio={() => onDetachAudio && onDetachAudio(clip.id)}
                               isDragging={draggedClipId === clip.id}
+                              isSelected={selectedClipId === clip.id}
+                              onSelect={() => onClipSelect && onClipSelect(clip.id)}
                             />
                           </div>
                         );
@@ -659,6 +668,25 @@ export default function Timeline({
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Add Track Buttons */}
+            <div className="flex h-12 bg-slate-900/50 border-b border-slate-700">
+              <div className="w-48 flex-shrink-0 sticky left-0 z-20 flex items-center justify-center gap-2 px-2 border-r border-slate-700">
+                <button
+                  onClick={() => onAddTrack && onAddTrack('video')}
+                  className="flex-1 py-1 px-2 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-400 hover:text-white border border-slate-700 transition-colors"
+                >
+                  + Video
+                </button>
+                <button
+                  onClick={() => onAddTrack && onAddTrack('audio')}
+                  className="flex-1 py-1 px-2 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-400 hover:text-white border border-slate-700 transition-colors"
+                >
+                  + Audio
+                </button>
+              </div>
+              <div className="flex-1 border-b border-slate-700/50" style={{ minWidth: `${timelineWidth}px` }}></div>
             </div>
           </DndContext>
         </div>

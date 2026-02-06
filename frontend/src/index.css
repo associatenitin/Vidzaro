@@ -18,13 +18,11 @@ body {
 }
 
 .stripes-diagonal {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(255, 255, 255, 0.05),
-    rgba(255, 255, 255, 0.05) 10px,
-    transparent 10px,
-    transparent 20px
-  );
+  background-image: repeating-linear-gradient(45deg,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0.05) 10px,
+      transparent 10px,
+      transparent 20px);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -43,4 +41,59 @@ body {
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #64748b;
+}
+
+/* Text Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+
+  70% {
+    transform: scale(0.9);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.anim-fade {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.anim-slide {
+  animation: slideUp 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+.anim-scale {
+  animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }

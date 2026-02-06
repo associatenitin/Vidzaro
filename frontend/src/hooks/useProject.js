@@ -279,8 +279,8 @@ export function useProject() {
       name: projectData.name || 'Untitled Project',
       clips: loadedClips,
       assets: projectData.assets || [], // Restore media library assets
-      tracks: projectData.tracks && projectData.tracks.length > 0 
-        ? projectData.tracks 
+      tracks: projectData.tracks && projectData.tracks.length > 0
+        ? projectData.tracks
         : defaultTracks, // Use saved tracks or defaults
       createdAt: projectData.createdAt || new Date().toISOString(),
       updatedAt: projectData.updatedAt || new Date().toISOString(),
@@ -309,6 +309,54 @@ export function useProject() {
     }));
   }, [setProjectWithHistory]);
 
+  const addTrack = useCallback((type = 'video') => {
+    setProjectWithHistory((prev) => {
+      const newId = Math.max(...prev.tracks.map(t => t.id), -1) + 1;
+      const videoCount = prev.tracks.filter(t => t.type === 'video').length;
+      const audioCount = prev.tracks.filter(t => t.type === 'audio').length;
+
+      const newTrack = {
+        id: newId,
+        label: type === 'video' ? `Video ${videoCount + 1}` : `Audio ${audioCount + 1}`,
+        type,
+        muted: false,
+        locked: false,
+        hidden: false,
+        height: type === 'video' ? 80 : 60
+      };
+
+      // Keep video tracks above audio tracks if possible, or just append
+      const videoTracks = prev.tracks.filter(t => t.type === 'video');
+      const audioTracks = prev.tracks.filter(t => t.type === 'audio');
+
+      let newTracks;
+      if (type === 'video') {
+        newTracks = [...videoTracks, newTrack, ...audioTracks];
+      } else {
+        newTracks = [...prev.tracks, newTrack];
+      }
+
+      return {
+        ...prev,
+        tracks: newTracks,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, [setProjectWithHistory]);
+
+  const removeTrack = useCallback((trackId) => {
+    setProjectWithHistory((prev) => {
+      if (prev.tracks.length <= 1) return prev; // Keep at least one track
+
+      return {
+        ...prev,
+        tracks: prev.tracks.filter(t => t.id !== trackId),
+        clips: prev.clips.filter(c => c.track !== trackId), // Remove clips on this track
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }, [setProjectWithHistory]);
+
   const resetProject = useCallback(() => {
     setProject({
       id: uuidv4(),
@@ -319,6 +367,42 @@ export function useProject() {
     });
     setHistory([]);
     setFuture([]);
+  }, []);
+
+  // Auto-save to LocalStorage
+  useEffect(() => {
+    const saveProject = () => {
+      try {
+        localStorage.setItem('vidzaro_autosave', JSON.stringify({
+          ...project,
+          autoSavedAt: new Date().toISOString()
+        }));
+      } catch (err) {
+        console.error('Failed to auto-save project:', err);
+      }
+    };
+
+    // Delay auto-save slightly to avoid excessive writes
+    const timeout = setTimeout(saveProject, 2000);
+    return () => clearTimeout(timeout);
+  }, [project]);
+
+  const loadAutoSave = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('vidzaro_autosave');
+      if (saved) {
+        const data = JSON.parse(saved);
+        loadProjectData(data);
+        return true;
+      }
+    } catch (err) {
+      console.error('Failed to load auto-save:', err);
+    }
+    return false;
+  }, [loadProjectData]);
+
+  const clearAutoSave = useCallback(() => {
+    localStorage.removeItem('vidzaro_autosave');
   }, []);
 
   return {
@@ -334,7 +418,11 @@ export function useProject() {
     addAsset,
     removeAsset,
     renameAsset,
+    addTrack,
+    removeTrack,
     loadProjectData,
+    loadAutoSave,
+    clearAutoSave,
     activeTool,
     setActiveTool,
     resetProject,

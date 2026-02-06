@@ -93,21 +93,24 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
       ) : (
         <>
           {/* 1. All Audio Elements (Hidden) */}
-          {activeClips.map((info) => {
+          {activeClips.map((info, index) => {
             const isImage = info.clip.type === 'image' || info.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
             if (info.clip.audioEnabled === false || isImage) return null;
 
-            const isTopVideo = topVideoClip && topVideoClip.clip.id === info.clip.id;
-            // If it's the top video, we might want to use the main visible element's audio 
-            // but for consistency we can just render it. 
-            // Actually, we'll render all audio uniquely.
+            // Define who drives the timeline: 
+            // 1. If there's a top video, let IT drive (VideoLayer will handle it)
+            // 2. If NO video, let the first audio clip drive
+            const hasVideo = !!topVideoClip;
+            const isFirstAudio = index === activeClips.findIndex(c => c.clip.audioEnabled !== false && !(c.clip.type === 'image' || c.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i)));
+            const shouldDrive = !hasVideo && isFirstAudio;
+
             return (
               <AudioLayer
                 key={info.clip.id + '-audio'}
                 clipInfo={info}
                 isPlaying={isPlaying}
                 currentTime={currentTime}
-                onTimeUpdate={isTopVideo ? onTimeUpdate : null} // Only top video drives timeline
+                onTimeUpdate={shouldDrive ? onTimeUpdate : null}
                 onPlayPause={onPlayPause}
                 project={project}
               />
@@ -121,6 +124,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
                 clipInfo={topVideoClip}
                 isPlaying={isPlaying}
                 currentTime={currentTime}
+                onTimeUpdate={onTimeUpdate} // Top video ALWAYS drives if it exists
                 project={project}
               />
             </div>
@@ -130,8 +134,23 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
           {/* 3. Global Overlays */}
           {topVideoClip?.clip.text && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
-              <span className="text-white text-4xl font-bold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-center px-10">
+            <div className={`absolute inset-0 flex pointer-events-none z-50 p-10 ${topVideoClip.clip.textPos === 'top' ? 'items-start justify-center' :
+              topVideoClip.clip.textPos === 'bottom' ? 'items-end justify-center' :
+                'items-center justify-center'
+              }`}>
+              <span
+                key={`${topVideoClip.clip.id}-${topVideoClip.clip.text}-${topVideoClip.clip.textAnim}`}
+                className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${topVideoClip.clip.textSize === 'xl' ? 'text-xl' :
+                  topVideoClip.clip.textSize === '2xl' ? 'text-2xl' :
+                    topVideoClip.clip.textSize === '6xl' ? 'text-6xl' :
+                      'text-4xl'
+                  } ${topVideoClip.clip.textAnim === 'fade' ? 'anim-fade' :
+                    topVideoClip.clip.textAnim === 'slide' ? 'anim-slide' :
+                      topVideoClip.clip.textAnim === 'scale' ? 'anim-scale' :
+                        ''
+                  }`}
+                style={{ color: topVideoClip.clip.textColor || '#ffffff' }}
+              >
                 {topVideoClip.clip.text}
               </span>
             </div>
@@ -260,13 +279,13 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project })
       let volume = clip.volume === undefined ? 1 : clip.volume;
 
       // Fades
-      const duration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+      const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
       const relativeTime = currentTime - (clip.startPos || 0);
 
       if (clip.fadeIn && relativeTime < clip.fadeIn) {
         volume *= (relativeTime / clip.fadeIn);
-      } else if (clip.fadeOut && relativeTime > (duration - clip.fadeOut)) {
-        const fadeOutStart = duration - clip.fadeOut;
+      } else if (clip.fadeOut && relativeTime > (clipDuration - clip.fadeOut)) {
+        const fadeOutStart = clipDuration - clip.fadeOut;
         volume *= (1 - (relativeTime - fadeOutStart) / clip.fadeOut);
       }
 
@@ -279,14 +298,19 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project })
       ref={audioRef}
       src={getVideoUrl(clip.videoId)}
       onTimeUpdate={onTimeUpdate ? (e) => {
-        // driving logic is slightly complex here but omitted for brevity
+        const newLocalTime = e.target.currentTime;
+        // Convert local video time back to timeline time
+        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
+        if (Math.abs(newTimelineTime - currentTime) > 0.05) {
+          onTimeUpdate(newTimelineTime);
+        }
       } : null}
       preload="auto"
     />
   );
 }
 
-function VideoLayer({ clipInfo, currentTime, isPlaying, project }) {
+function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project }) {
   const videoRef = useRef(null);
   const { clip, clipLocalTime } = clipInfo;
   const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
@@ -351,6 +375,13 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, project }) {
       className="max-w-full max-h-full"
       style={{ filter: getFilterStyle(clip.filter) }}
       muted // We handle audio in AudioLayer
+      onTimeUpdate={onTimeUpdate ? (e) => {
+        const newLocalTime = e.target.currentTime;
+        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
+        if (Math.abs(newTimelineTime - currentTime) > 0.05) {
+          onTimeUpdate(newTimelineTime);
+        }
+      } : null}
       preload="auto"
     />
   );

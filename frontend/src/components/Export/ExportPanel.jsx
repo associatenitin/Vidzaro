@@ -38,6 +38,9 @@ export default function ExportPanel({ project, onClose }) {
     return () => clearInterval(interval);
   }, [jobId]);
 
+  const [resolution, setResolution] = useState('1080'); // 1080, 720, 480
+  const [quality, setQuality] = useState('high'); // high, medium, low
+
   const handleExport = async () => {
     setIsExporting(true);
     setError(null);
@@ -48,6 +51,10 @@ export default function ExportPanel({ project, onClose }) {
       // Prepare project data for export
       const exportData = {
         ...project,
+        options: {
+          resolution,
+          quality
+        },
         clips: project.clips.map((clip) => ({
           ...clip,
           videoId: clip.videoId,
@@ -79,20 +86,49 @@ export default function ExportPanel({ project, onClose }) {
         </div>
 
         {!isExporting && !status && (
-          <div className="space-y-4">
-            <p className="text-slate-300">
+          <div className="space-y-6">
+            <p className="text-slate-300 text-sm">
               Export your project as an MP4 video file. This may take a few minutes depending on video length.
             </p>
+
+            <div className="space-y-4 bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Resolution</label>
+                <select
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-blue-500"
+                >
+                  <option value="1080">1920x1080 (HD)</option>
+                  <option value="720">1280x720 (720p)</option>
+                  <option value="480">854x480 (SD)</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Quality</label>
+                <select
+                  value={quality}
+                  onChange={(e) => setQuality(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-blue-500"
+                >
+                  <option value="high">High (Maximum quality)</option>
+                  <option value="medium">Medium (Balanced)</option>
+                  <option value="low">Low (Smaller file size)</option>
+                </select>
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <button
                 onClick={handleExport}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium"
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
               >
                 Start Export
               </button>
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium"
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium transition-colors"
               >
                 Cancel
               </button>

@@ -26,7 +26,11 @@ function App() {
     addAsset,
     removeAsset,
     renameAsset,
+    addTrack,
+    removeTrack,
     loadProjectData,
+    loadAutoSave,
+    clearAutoSave,
     activeTool,
     setActiveTool,
     undo,
@@ -43,6 +47,15 @@ function App() {
   const [showRecorder, setShowRecorder] = useState(false);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
+  const [selectedClipId, setSelectedClipId] = useState(null); // Clip selected on timeline
+
+  // Initial load check for autosave
+  useEffect(() => {
+    const recovered = loadAutoSave();
+    if (recovered) {
+      console.log('Project recovered from auto-save');
+    }
+  }, [loadAutoSave]);
 
   // Layout state
   const [timelineHeight, setTimelineHeight] = useState(300); // Initial height in pixels
@@ -58,15 +71,22 @@ function App() {
 
   const handleSplit = () => {
     if (project.clips.length === 0) return;
-    // Find clip at current time
-    // This logic needs to be updated for multitrack but works for active track usually
-    // For now simple implementation: split all clips under playhead
 
-    // Better: Only split selected clip or top clip
-    // Reusing existing split logic for now, but extending to scan all tracks?
-    // The current splitClip takes an ID. We need to find the ID.
+    // If a clip is selected, split that clip
+    if (selectedClipId) {
+      const selectedClip = project.clips.find(c => c.id === selectedClipId);
+      if (selectedClip) {
+        const start = selectedClip.startPos || 0;
+        const end = start + ((selectedClip.trimEnd || selectedClip.endTime) - (selectedClip.trimStart || 0)) / (selectedClip.speed || 1);
+        // Only split if playhead is within the selected clip
+        if (currentTime > start && currentTime < end) {
+          splitClip(selectedClipId, currentTime);
+          return;
+        }
+      }
+    }
 
-    // Simple heuristic: Split top-most visible clip under playhead
+    // Otherwise, split top-most visible clip under playhead
     const clipsUnderPlayhead = project.clips.filter(clip => {
       const start = clip.startPos || 0;
       const end = start + ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
@@ -74,7 +94,6 @@ function App() {
     }).sort((a, b) => (b.track || 0) - (a.track || 0));
 
     if (clipsUnderPlayhead.length > 0) {
-      // Split the top one
       splitClip(clipsUnderPlayhead[0].id, currentTime);
     }
   };
@@ -165,11 +184,24 @@ function App() {
         e.preventDefault();
         setCurrentTime(0);
       }
+
+      // Delete or Backspace - Remove selected clip
+      if ((e.code === 'Delete' || e.code === 'Backspace') && selectedClipId) {
+        e.preventDefault();
+        removeClip(selectedClipId);
+        setSelectedClipId(null);
+      }
+
+      // Escape - Deselect clip
+      if (e.code === 'Escape') {
+        setSelectedClipId(null);
+        setSelectedAsset(null);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, canUndo, canRedo, undo, redo, setActiveTool, currentTime]);
+  }, [isPlaying, canUndo, canRedo, undo, redo, setActiveTool, currentTime, selectedClipId, removeClip]);
 
   const handleSave = () => {
     setShowSaveDialog(true);
@@ -327,6 +359,10 @@ function App() {
           onDropAsset={(asset, pos) => addClip(asset, pos)}
           onDetachAudio={detachAudio}
           activeTool={activeTool}
+          selectedClipId={selectedClipId}
+          onClipSelect={setSelectedClipId}
+          onAddTrack={addTrack}
+          onRemoveTrack={removeTrack}
         />
       </div>
 

@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
@@ -150,9 +150,18 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       {...attributes}
       {...(isHoveringSettings || showSettings ? {} : listeners)}
       onContextMenu={handleContextMenu}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect && onSelect();
+      }}
     >
       {/* Clip container with overflow-hidden for content */}
-      <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden ${clip.filter ? 'border-yellow-500' : 'border-blue-400'}`}>
+      <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden transition-all ${isSelected
+        ? 'border-cyan-400 ring-2 ring-cyan-400/50 shadow-lg shadow-cyan-500/30'
+        : clip.filter
+          ? 'border-yellow-500'
+          : 'border-blue-400'
+        }`}>
         {/* Thumbnails Background */}
         <div className="absolute inset-0 flex pointer-events-none opacity-40">
           {isImage ? (
@@ -370,15 +379,78 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </div>
         </div>
 
-        <div className="flex items-center gap-1 border-t border-slate-700 pt-1 mt-1">
-          <input
-            type="text"
-            placeholder="Text Overlay..."
-            value={clip.text || ''}
-            onChange={(e) => onUpdate({ text: e.target.value || null })}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
-          />
+        <div className="border-t border-slate-700 pt-1.5 mt-1.5 space-y-2">
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              placeholder="Text Overlay..."
+              value={clip.text || ''}
+              onChange={(e) => onUpdate({ text: e.target.value || null })}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1.5 py-1 outline-none focus:border-blue-400 w-full"
+            />
+          </div>
+
+          {(clip.text) && (
+            <div className="grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-1">
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] text-slate-500 uppercase font-bold">Position</span>
+                <select
+                  value={clip.textPos || 'center'}
+                  onChange={(e) => onUpdate({ textPos: e.target.value })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                >
+                  <option value="top">Top</option>
+                  <option value="center">Center</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] text-slate-500 uppercase font-bold">Animation</span>
+                <select
+                  value={clip.textAnim || 'none'}
+                  onChange={(e) => onUpdate({ textAnim: e.target.value })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                >
+                  <option value="none">None</option>
+                  <option value="fade">Fade</option>
+                  <option value="slide">Slide</option>
+                  <option value="scale">Bounce</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] text-slate-500 uppercase font-bold">Size</span>
+                <select
+                  value={clip.textSize || '4xl'}
+                  onChange={(e) => onUpdate({ textSize: e.target.value })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                >
+                  <option value="xl">Small</option>
+                  <option value="2xl">Medium</option>
+                  <option value="4xl">Large</option>
+                  <option value="6xl">X-Large</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[8px] text-slate-500 uppercase font-bold">Color</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="color"
+                    value={clip.textColor || '#ffffff'}
+                    onChange={(e) => onUpdate({ textColor: e.target.value })}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="w-full h-4 bg-transparent border-none p-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

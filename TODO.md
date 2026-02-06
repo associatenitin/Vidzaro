@@ -11,12 +11,12 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
   - **File:** `frontend/src/components/Preview/VideoPlayer.jsx` (lines 174-210)
   - **Solution:** Added useEffect to sync video.currentTime with clipLocalTime and handle play/pause
 
-### 2. Audio Layer Time Sync Not Driving Timeline
-- [ ] **Audio onTimeUpdate callback is incomplete**
-  - The `AudioLayer` component has an empty implementation for `onTimeUpdate`
-  - This means audio playback doesn't properly drive the timeline position
-  - **File:** `frontend/src/components/Preview/VideoPlayer.jsx` (lines 166-168)
-  - **Solution:** Implement proper time update logic similar to PreviewAssetLayer
+### 2. Audio Layer Time Sync ✅ FIXED
+- [x] **Audio onTimeUpdate callback implemented**
+  - ✅ Designated a 'master clock' driver from active clips
+  - ✅ Topmost video or first audio clip now drives the timeline
+  - ✅ Accurate time conversion between local clip time and timeline time
+  - **File:** `frontend/src/components/Preview/VideoPlayer.jsx`
 
 ### 3. Play/Pause State Not Persisting
 - [ ] **Play button state resets when switching between preview and timeline mode**
@@ -59,11 +59,12 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
   - ✅ Time display (current / total)
   - **File:** `frontend/src/components/Preview/VideoPlayer.jsx`
 
-### 8. Timeline Track Management
-- [ ] **Cannot add/remove tracks dynamically**
-  - Tracks are fixed at 4 (2 video, 2 audio)
-  - No way to add more tracks or remove unused ones
-  - **Files:** `frontend/src/hooks/useProject.js`, `frontend/src/components/Timeline/Timeline.jsx`
+### 8. Dynamic Track Management ✅ COMPLETED
+- [x] **Add/Remove track functionality implemented**
+  - ✅ Buttons to add new video and audio tracks
+  - ✅ Ability to rename and delete tracks (with clip cleanup)
+  - ✅ Custom track heights per type
+  - **Files:** `frontend/src/hooks/useProject.js`, `frontend/src/App.jsx`, `frontend/src/components/Timeline/Timeline.jsx`
 
 ### 9. Clip Settings Panel Positioning
 - [ ] **Settings panel can overflow viewport**
@@ -75,11 +76,13 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
 
 ## ⚡ Feature Enhancements (Phase 2)
 
-### 10. Text Overlay Improvements
-- [ ] **Text overlays need styling options**
-  - Currently only plain text supported
-  - Need: font size, color, position (top/center/bottom), animation
-  - **Files:** `frontend/src/components/Timeline/Clip.jsx`, `frontend/src/components/Preview/VideoPlayer.jsx`
+### 10. Text Overlay Improvements ✅ COMPLETED
+- [x] **Text overlays need styling options**
+  - ✅ Position control (Top, Center, Bottom)
+  - ✅ Font size selection
+  - ✅ Text color picker
+  - ✅ Premium animations (Fade, Slide, Bounce)
+  - **Files:** `frontend/src/components/Timeline/Clip.jsx`, `frontend/src/components/Preview/VideoPlayer.jsx`, `frontend/src/index.css`
 
 ### 11. Transitions Between Clips
 - [ ] **No transition support**
@@ -100,16 +103,19 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
   - Can't visualize audio levels in real-time
   - Need visual feedback during playback
 
-### 14. Project Auto-Save
-- [ ] **No auto-save functionality**
-  - Risk of losing work on browser crash
-  - **Solution:** Implement LocalStorage/IndexedDB auto-save with periodic saves
+### 14. Project Auto-Save ✅ COMPLETED
+- [x] **Auto-save functionality implemented**
+  - ✅ Saves to LocalStorage every 2 seconds after changes (debounced)
+  - ✅ Automatically recovers project on browser reload
+  - ✅ Resilient against browser crashes or accidental refreshes
+  - **Files:** `frontend/src/hooks/useProject.js`, `frontend/src/App.jsx`
 
-### 15. Export Options
-- [ ] **Limited export configuration**
-  - No resolution selection
-  - No frame rate selection  
-  - No quality/bitrate options
+### 15. Export Options ✅ COMPLETED
+- [x] **Configurable export settings**
+  - ✅ Resolution selection (1080p, 720p, 480p)
+  - ✅ Quality profiles (High, Medium, Low)
+  - ✅ Dynamic progress reporting
+  - **File:** `frontend/src/components/Export/ExportPanel.jsx`
   - **Files:** `frontend/src/components/Export/ExportPanel.jsx`, `backend/src/routes/export.js`
 
 ---
@@ -151,13 +157,13 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
    - [x] Add progress bar on preview (#7) ✅
    
 3. **Features:**
-   - [ ] Enhance text overlays (#10)
+   - [x] Enhance text overlays (#10) ✅
    - [x] Add more filters (#12) ✅
-   - [ ] Export options (#15)
+   - [x] Export options (#15) ✅
 
 4. **Polish:**
-   - [ ] Auto-save (#14)
-   - [ ] Track management (#8)
+   - [x] Auto-save (#14) ✅
+   - [x] Track management (#8) ✅
    - [ ] Error handling (#18)
 
 ---
@@ -171,9 +177,11 @@ Track all enhancements and bug fixes for the Vidzaro video editor.
 | Playback Controls | ✅ Complete | 2026-02-06 | 2026-02-06 |
 | Progress Bar | ✅ Complete | 2026-02-06 | 2026-02-06 |
 | More Filters | ✅ Complete | 2026-02-06 | 2026-02-06 |
-| Clip Selection | ⏳ Pending | - | - |
-| Text Overlays | ⏳ Pending | - | - |
-| Export Options | ⏳ Pending | - | - |
+| Text Overlays | ✅ Complete | 2026-02-06 | 2026-02-06 |
+| Auto-Save | ✅ Complete | 2026-02-06 | 2026-02-06 |
+| Track Management | ✅ Complete | 2026-02-06 | 2026-02-06 |
+| Export Options | ✅ Complete | 2026-02-06 | 2026-02-06 |
+| Clip Selection | ⏳ In Progress | 2026-02-06 | - |
 
 ---
 
