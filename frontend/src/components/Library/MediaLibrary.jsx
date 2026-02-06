@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { getThumbnailUrl, getVideoUrl, getVideoThumbnails } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 
-export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId }) {
+export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId, onShare }) {
     const [filter, setFilter] = useState('all'); // all, video, audio, image
     const [thumbnails, setThumbnails] = useState({}); // Map of assetId -> thumbnail URL
     const [failedThumbnails, setFailedThumbnails] = useState(new Set()); // Track failed thumbnail loads
@@ -334,6 +334,17 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                         Preview
                     </button>
                     */}
+                    {onShare && (
+                        <button
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-slate-200"
+                            onClick={() => {
+                                onShare(contextMenu.asset);
+                                setContextMenu(null);
+                            }}
+                        >
+                            Share (copy link)
+                        </button>
+                    )}
                     <button
                         className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-slate-200"
                         onClick={() => {

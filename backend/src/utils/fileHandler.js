@@ -11,6 +11,8 @@ export const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
 export const PROJECTS_DIR = path.join(ROOT_DIR, 'projects');
 export const EXPORTS_DIR = path.join(ROOT_DIR, 'exports');
 export const THUMBNAILS_DIR = path.join(ROOT_DIR, 'thumbnails');
+export const SHARES_DIR = path.join(ROOT_DIR, 'shares');
+export const SHARES_META_FILE = path.join(ROOT_DIR, 'shares-meta.json');
 
 // Ensure directories exist
 export async function ensureDirectories() {
@@ -18,6 +20,7 @@ export async function ensureDirectories() {
   await fs.mkdir(PROJECTS_DIR, { recursive: true });
   await fs.mkdir(EXPORTS_DIR, { recursive: true });
   await fs.mkdir(THUMBNAILS_DIR, { recursive: true });
+  await fs.mkdir(SHARES_DIR, { recursive: true });
 }
 
 // Get file extension

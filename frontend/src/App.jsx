@@ -7,8 +7,10 @@ import Timeline from './components/Timeline/Timeline';
 import ExportPanel from './components/Export/ExportPanel';
 import FileDialog from './components/Project/FileDialog';
 import SaveDialog from './components/Project/SaveDialog';
+import Recorder from './components/Recorder/Recorder';
+import ShareDialog from './components/Share/ShareDialog';
 import { useEffect } from 'react';
-import { saveProject } from './services/api';
+import { saveProject, uploadVideo, finalizeRecording } from './services/api';
 
 function App() {
   const {
@@ -38,6 +40,8 @@ function App() {
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showRecorder, setShowRecorder] = useState(false);
+  const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
 
   // Layout state
@@ -172,6 +176,12 @@ function App() {
               Save
             </button>
             <button
+              onClick={() => setShowRecorder(true)}
+              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium"
+            >
+              Record
+            </button>
+            <button
               onClick={() => setShowExportPanel(true)}
               className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium"
               disabled={project.clips.length === 0}
@@ -200,6 +210,7 @@ function App() {
             }}
             onAssetSelect={setSelectedAsset}
             selectedAssetId={selectedAsset?.id}
+            onShare={(asset) => setShareDialogAsset(asset)}
           />
         </div>
 
@@ -279,6 +290,33 @@ function App() {
         onSaveComplete={handleSaveComplete}
         title="Save Project"
       />
+
+      {shareDialogAsset && (
+        <ShareDialog
+          asset={shareDialogAsset}
+          onClose={() => setShareDialogAsset(null)}
+        />
+      )}
+
+      {showRecorder && (
+        <Recorder
+          onClose={() => setShowRecorder(false)}
+          onRecordingComplete={async (blob, saveOptions) => {
+            const file = new File([blob], 'recording.webm', { type: 'video/webm' });
+            try {
+              const response = saveOptions
+                ? await finalizeRecording(file, saveOptions)
+                : await uploadVideo(file);
+              const assetData = response.data;
+              addAsset(assetData);
+              addClip(assetData, null);
+            } catch (err) {
+              console.error('Upload recording failed:', err);
+              alert('Failed to upload recording');
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

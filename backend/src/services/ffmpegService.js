@@ -354,3 +354,56 @@ export async function exportVideo(projectData, outputPath, tempDir) {
     throw error;
   }
 }
+
+/**
+ * Convert WebM recording to MP4 or MKV with optional trim and output settings
+ */
+export async function convertRecording(inputPath, outputPath, options = {}) {
+  if (!(await fileExists(inputPath))) {
+    throw new Error(`Input file not found: ${inputPath}`);
+  }
+
+  const {
+    format = 'mp4',
+    fps,
+    width,
+    height,
+    videoBitrate,
+    trimStart = 0,
+    trimEnd,
+  } = options;
+
+  const duration = trimEnd != null && trimEnd > trimStart ? trimEnd - trimStart : undefined;
+
+  return new Promise((resolve, reject) => {
+    let command = ffmpeg(inputPath);
+
+    if (trimStart > 0) command = command.seekInput(trimStart);
+    if (duration != null) command = command.duration(duration);
+
+    const outputOpts = [];
+    if (format === 'mp4') {
+      outputOpts.push('-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac');
+      if (videoBitrate) outputOpts.push('-b:v', String(videoBitrate));
+      if (fps) outputOpts.push('-r', String(fps));
+    } else if (format === 'mkv') {
+      outputOpts.push('-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac');
+      if (videoBitrate) outputOpts.push('-b:v', String(videoBitrate));
+      if (fps) outputOpts.push('-r', String(fps));
+    } else if (format === 'webm') {
+      outputOpts.push('-c:v', 'libvpx-vp9', '-c:a', 'libopus');
+      if (videoBitrate) outputOpts.push('-b:v', String(videoBitrate));
+      if (fps) outputOpts.push('-r', String(fps));
+    }
+
+    const scale = width && height ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2` : null;
+    if (scale) command = command.videoFilters(scale);
+
+    command
+      .outputOptions(outputOpts)
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => reject(new Error(`Conversion error: ${err.message}`)))
+      .run();
+  });
+}

@@ -6,6 +6,8 @@ import uploadRoutes from './routes/upload.js';
 import videoRoutes from './routes/video.js';
 import exportRoutes from './routes/export.js';
 import projectRoutes from './routes/projects.js';
+import recordingRoutes from './routes/recordings.js';
+import shareRoutes from './routes/shares.js';
 import { errorHandler } from './utils/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,6 +31,8 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/video', videoRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/recordings', recordingRoutes);
+app.use('/api/shares', shareRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
