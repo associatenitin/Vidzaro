@@ -6,6 +6,7 @@ import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
 import ExportPanel from './components/Export/ExportPanel';
 import FileDialog from './components/Project/FileDialog';
+import SaveDialog from './components/Project/SaveDialog';
 import { useEffect } from 'react';
 import { saveProject } from './services/api';
 
@@ -36,6 +37,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
 
   // Layout state
@@ -100,30 +102,30 @@ function App() {
     };
   }, [isResizing]);
 
-  const handleSave = async () => {
-    try {
-      // Prompt for project name if it's empty or default
-      let projectName = project.name;
-      if (!projectName || projectName.trim() === '' || projectName === 'Untitled Project') {
-        const name = prompt('Enter project name:', projectName || 'Untitled Project');
-        if (name === null) return; // User cancelled
-        projectName = name.trim() || 'Untitled Project';
-        setProjectName(projectName);
-      }
+  const handleSave = () => {
+    setShowSaveDialog(true);
+  };
 
-      // Save with the name
-      const projectToSave = {
-        ...project,
-        name: projectName,
-      };
-      
-      const response = await saveProject(projectToSave);
-      const filePath = response.data?.filePath || 'Path not available';
-      
-      alert(`Project saved successfully!\n\nName: ${projectName}\nPath: ${filePath}`);
+  const handleSaveProject = () => {
+    // Return the project data to save
+    return {
+      ...project,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  const handleSaveComplete = async (projectData, fileName) => {
+    // Update project name if it was changed
+    if (projectData.name !== project.name) {
+      setProjectName(projectData.name);
+    }
+    
+    // Optionally also save to server for backup/cloud sync
+    try {
+      await saveProject(projectData);
     } catch (error) {
-      console.error('Failed to save project:', error);
-      alert('Failed to save project');
+      console.error('Failed to save project to server:', error);
+      // Don't show error to user as local save succeeded
     }
   };
 
@@ -266,6 +268,16 @@ function App() {
         onClose={() => setShowLoadDialog(false)}
         onSelectFile={handleFileSelected}
         title="Load Project"
+      />
+
+      {/* Save Dialog for Saving Projects */}
+      <SaveDialog
+        isOpen={showSaveDialog}
+        onClose={() => setShowSaveDialog(false)}
+        projectName={project.name}
+        onSave={handleSaveProject}
+        onSaveComplete={handleSaveComplete}
+        title="Save Project"
       />
     </div>
   );
