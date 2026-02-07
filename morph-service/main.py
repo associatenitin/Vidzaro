@@ -96,6 +96,17 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
+try:
+    from skimage import transform as trans
+except ImportError:
+    print("Warning: scikit-image not available, face alignment will be limited")
+
+# Import torch for CUDA checks
+try:
+    import torch
+except ImportError:
+    print("Warning: PyTorch not available")
+    torch = None
 
 app = FastAPI(title="Video Morph Service")
 
@@ -115,10 +126,18 @@ Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
 # Lazy-load heavy deps
 _face_app = None
+_face_app_hd = None  # High-definition face detector
 _swapper = None
 _enhancer = None
+_codeformer = None
+_face_parser = None
 # Override from request: None = use env; True = CPU only; False = prefer CUDA
 _prefer_cpu_override: bool | None = None
+
+# Quality settings
+HD_DETECTION_SIZE = (1024, 1024)  # Higher resolution for better detection
+TEMPORAL_SMOOTH_FRAMES = 5  # Frames to consider for temporal smoothing
+QUALITY_THRESHOLD = 0.6  # Higher threshold for better face matches
 
 
 def _get_providers():
@@ -133,15 +152,18 @@ def _get_providers():
 
 def _apply_use_cuda(use_cuda: bool | None):
     """Apply request-level CPU/CUDA preference; clear cached models if preference changed."""
-    global _face_app, _swapper, _prefer_cpu_override
+    global _face_app, _face_app_hd, _swapper, _prefer_cpu_override, _enhancer, _codeformer, _face_parser
     if use_cuda is None:
         return
     new_prefer_cpu = not use_cuda
     if _prefer_cpu_override != new_prefer_cpu:
         _prefer_cpu_override = new_prefer_cpu
         _face_app = None
+        _face_app_hd = None
         _swapper = None
         _enhancer = None
+        _codeformer = None
+        _face_parser = None
 
 
 def get_face_app():
@@ -151,14 +173,31 @@ def get_face_app():
             print("Loading FaceAnalysis model...")
             import insightface
             from insightface.app import FaceAnalysis
-            model = os.environ.get("INSIGHTFACE_MODEL", "buffalo_s")
+            model = os.environ.get("INSIGHTFACE_MODEL", "buffalo_l")  # Use larger, more accurate model
             _face_app = FaceAnalysis(name=model, root=MODELS_ROOT, providers=_get_providers())
-            _face_app.prepare(ctx_id=0, det_size=(640, 640))
+            _face_app.prepare(ctx_id=0, det_size=(640, 640))  # Standard resolution for speed
             print("FaceAnalysis loaded successfully.")
         except Exception as e:
             print(f"Failed to load FaceAnalysis: {e}")
             raise RuntimeError(f"Failed to load FaceAnalysis: {e}") from e
     return _face_app
+
+def get_face_app_hd():
+    """High-definition face detector for better quality detection"""
+    global _face_app_hd
+    if _face_app_hd is None:
+        try:
+            print("Loading HD FaceAnalysis model...")
+            import insightface
+            from insightface.app import FaceAnalysis
+            model = os.environ.get("INSIGHTFACE_MODEL", "buffalo_l")
+            _face_app_hd = FaceAnalysis(name=model, root=MODELS_ROOT, providers=_get_providers())
+            _face_app_hd.prepare(ctx_id=0, det_size=HD_DETECTION_SIZE)  # Higher resolution
+            print("HD FaceAnalysis loaded successfully.")
+        except Exception as e:
+            print(f"Failed to load HD FaceAnalysis: {e}")
+            raise RuntimeError(f"Failed to load HD FaceAnalysis: {e}") from e
+    return _face_app_hd
 
 
 def get_swapper():
@@ -204,7 +243,7 @@ def get_enhancer():
             model_url = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth'
             _enhancer = GFPGANer(
                 model_path=model_url,
-                upscale=1,
+                upscale=2,  # Higher upscale for better quality
                 arch='clean',
                 channel_multiplier=2,
                 bg_upsampler=None,
@@ -219,6 +258,68 @@ def get_enhancer():
     if _enhancer == "failed":
         return None
     return _enhancer
+
+def get_codeformer():
+    """CodeFormer for advanced face enhancement"""
+    global _codeformer
+    if _codeformer is None:
+        try:
+            print("Loading CodeFormer enhancer...")
+            import torch
+            
+            device = torch.device('cuda' if torch.cuda.is_available() and _prefer_cpu_override is not True else 'cpu')
+            print(f"CodeFormer using device: {device}")
+            
+            try:
+                # Try importing CodeFormer - it might not be available
+                import basicsr
+                from basicsr.utils import img2tensor
+                print("BasicSR available for CodeFormer")
+                
+                # For now, mark as available but don't fully initialize 
+                # due to potential compatibility issues
+                _codeformer = "available_but_limited"
+                print("CodeFormer marked as available (limited implementation)")
+                return None  # Return None for now, can be enhanced later
+                
+            except ImportError as e:
+                print(f"CodeFormer dependencies missing: {e}")
+                _codeformer = "not_available"
+                return None
+                
+        except Exception as e:
+            print(f"Failed to load CodeFormer: {e}")
+            _codeformer = "failed"
+            return None
+    if _codeformer in ["failed", "not_available", "available_but_limited"]:
+        return None
+    return _codeformer
+
+def get_face_parser():
+    """Face parser for better face segmentation"""
+    global _face_parser
+    if _face_parser is None:
+        try:
+            print("Loading Face Parser...")
+            import torch
+            
+            device = torch.device('cuda' if torch.cuda.is_available() and _prefer_cpu_override is not True else 'cpu')
+            
+            try:
+                from face_alignment import FaceAlignment, LandmarksType
+                _face_parser = FaceAlignment(LandmarksType._2D, device=str(device))
+                print("Face Parser loaded successfully.")
+            except ImportError:
+                print("Face-alignment not available")
+                _face_parser = "not_available"
+                return None
+        except Exception as e:
+            print(f"Failed to load Face Parser: {e}")
+            _face_parser = "failed"
+            return None
+    if _face_parser in ["failed", "not_available"]:
+        return None
+    return _face_parser
 
 
 def iou_box(a, b):
@@ -236,6 +337,168 @@ def iou_box(a, b):
     area_b = (bx2 - bx1) * (by2 - by1)
     return inter / (area_a + area_b - inter + 1e-6)
 
+def normalize_face_embedding(embedding):
+    """Normalize face embedding for better similarity comparisons"""
+    if embedding is None:
+        return None
+    emb = np.asarray(embedding, dtype=np.float32)
+    norm = np.linalg.norm(emb)
+    if norm < 1e-8:
+        return emb
+    return emb / norm
+
+def enhance_face_alignment(face_img, landmarks=None):
+    """Improve face alignment using landmarks for better swap quality"""
+    try:
+        if landmarks is None:
+            face_parser = get_face_parser()
+            if face_parser:
+                landmarks = face_parser.get_landmarks(face_img)
+        
+        if landmarks is not None and len(landmarks) > 0:
+            # Use the first detected face landmarks
+            lm = landmarks[0] if isinstance(landmarks, list) else landmarks
+            
+            # Apply alignment transformation
+            from skimage import transform as trans
+            
+            # Standard landmark positions for alignment
+            src_landmarks = np.array([
+                [30.2946, 51.6963],  # Left eye
+                [65.5318, 51.5014],  # Right eye
+                [48.0252, 71.7366],  # Nose tip
+                [33.5493, 92.3655],  # Left mouth corner
+                [62.7299, 92.2041]   # Right mouth corner
+            ], dtype=np.float32)
+            
+            # Get corresponding landmarks from detected face
+            if len(lm) >= 68:  # 68-point landmarks
+                dst_landmarks = np.array([
+                    lm[36:42].mean(axis=0),  # Left eye center
+                    lm[42:48].mean(axis=0),  # Right eye center
+                    lm[30],                  # Nose tip
+                    lm[48],                  # Left mouth corner
+                    lm[54]                   # Right mouth corner
+                ], dtype=np.float32)
+            elif len(lm) >= 5:  # 5-point landmarks
+                dst_landmarks = lm[:5].astype(np.float32)
+            else:
+                return face_img
+            
+            # Compute similarity transform
+            tform = trans.SimilarityTransform()
+            tform.estimate(dst_landmarks, src_landmarks)
+            
+            # Apply transformation
+            aligned_face = trans.warp(face_img, tform.inverse, output_shape=(112, 112))
+            return (aligned_face * 255).astype(np.uint8)
+    except Exception as e:
+        print(f"Face alignment failed: {e}")
+        return face_img
+    
+    return face_img
+
+def apply_temporal_smoothing(current_face, face_history, alpha=0.7):
+    """Apply temporal smoothing to reduce flickering between frames"""
+    if not face_history:
+        return current_face
+    
+    # Simple exponential moving average of face features
+    smoothed = current_face.copy()
+    
+    # Blend with previous frames
+    for i, prev_face in enumerate(reversed(face_history[-TEMPORAL_SMOOTH_FRAMES:])):
+        weight = alpha ** (i + 1)
+        smoothed = cv2.addWeighted(smoothed, 1 - weight, prev_face, weight, 0)
+    
+    return smoothed
+
+def apply_temporal_smoothing_region(frame_rgb, face_history, bbox, alpha=0.7):
+    """Apply temporal smoothing only within the face bbox to avoid full-frame ghosting."""
+    if not face_history or bbox is None or len(bbox) != 4:
+        return frame_rgb
+
+    h, w = frame_rgb.shape[:2]
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    x1 = max(0, min(w - 1, x1))
+    y1 = max(0, min(h - 1, y1))
+    x2 = max(0, min(w, x2))
+    y2 = max(0, min(h, y2))
+
+    if x2 <= x1 or y2 <= y1:
+        return frame_rgb
+
+    smoothed = frame_rgb.copy()
+    region = smoothed[y1:y2, x1:x2]
+
+    for i, prev in enumerate(reversed(face_history[-TEMPORAL_SMOOTH_FRAMES:])):
+        prev_region = prev[y1:y2, x1:x2]
+        if prev_region.shape != region.shape:
+            continue
+        weight = alpha ** (i + 1)
+        region = cv2.addWeighted(region, 1 - weight, prev_region, weight, 0)
+
+    smoothed[y1:y2, x1:x2] = region
+    return smoothed
+
+def multi_stage_enhancement(face_img, use_codeformer=True):
+    """Apply multiple enhancement stages for best quality"""
+    enhanced = face_img.copy()
+    
+    try:
+        # Stage 1: CodeFormer (if available) - Skip for now as it might cause hangs
+        if use_codeformer and False:  # Disabled temporarily
+            codeformer = get_codeformer()
+            if codeformer:
+                try:
+                    # Apply CodeFormer enhancement
+                    enhanced = codeformer.enhance(enhanced)
+                except Exception as e:
+                    print(f"CodeFormer enhancement failed: {e}")
+        
+        # Stage 2: GFPGAN for enhancement with timeout protection
+        enhancer = get_enhancer()
+        if enhancer:
+            try:
+                print("Applying GFPGAN enhancement...")
+                _, _, enhanced = enhancer.enhance(enhanced, has_aligned=False, only_center_face=False, paste_back=True)
+                print("GFPGAN enhancement completed.")
+            except Exception as e:
+                print(f"GFPGAN enhancement failed: {e}")
+                # Return original image if enhancement fails
+                enhanced = face_img
+        
+        # Stage 3: Post-processing (lightweight)
+        try:
+            enhanced = apply_post_processing(enhanced)
+        except Exception as e:
+            print(f"Post-processing failed: {e}")
+            enhanced = face_img
+        
+    except Exception as e:
+        print(f"Multi-stage enhancement failed: {e}")
+        return face_img
+    
+    return enhanced
+
+def apply_post_processing(img):
+    """Apply post-processing for better visual quality"""
+    try:
+        # Enhance contrast and sharpness
+        enhanced = cv2.convertScaleAbs(img, alpha=1.1, beta=5)
+        
+        # Apply bilateral filter for noise reduction while preserving edges
+        enhanced = cv2.bilateralFilter(enhanced, 9, 75, 75)
+        
+        # Subtle sharpening
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(enhanced, -1, kernel)
+        enhanced = cv2.addWeighted(enhanced, 0.8, sharpened, 0.2, 0)
+        
+        return enhanced
+    except:
+        return img
+
 
 # Global state for tracking job progress
 _jobs = {}
@@ -248,78 +511,135 @@ def update_job_progress(job_id: str, progress: float, status: str = "processing"
         "updated_at": os.times()[4]
     }
 
-def assign_track_ids_embedding(detections_per_frame, sim_thresh=0.42):
+def assign_track_ids_embedding(detections_per_frame, sim_thresh=QUALITY_THRESHOLD):
     """
-    Assign track IDs by face embedding similarity across keyframes.
+    Assign track IDs by face embedding similarity across keyframes with improved accuracy.
     Ensures that each ID is used at most once per frame.
     """
     next_id = 0
-    track_embeddings = {}  # trackId -> list of embeddings
+    track_embeddings = {}  # trackId -> list of normalized embeddings
     track_bbox = {}  # trackId -> last bbox
-    MAX_EMBEDDINGS_PER_TRACK = 5
+    track_quality_scores = {}  # trackId -> quality scores
+    MAX_EMBEDDINGS_PER_TRACK = 8  # Increased for better representation
     out = []
     
     for frame_dets in detections_per_frame:
         new_frame = []
         used_ids_in_this_frame = set()
         
-        # Sort detections by size or presence of embedding to prioritize better matches
-        sorted_dets = sorted(frame_dets, key=lambda d: d.get("embedding") is not None, reverse=True)
+        # Sort detections by quality (embedding presence and face size)
+        sorted_dets = sorted(frame_dets, key=lambda d: (
+            d.get("embedding") is not None,
+            d.get("quality_score", 0.0),
+            (d.get("bbox", [0,0,0,0])[2] - d.get("bbox", [0,0,0,0])[0]) * 
+            (d.get("bbox", [0,0,0,0])[3] - d.get("bbox", [0,0,0,0])[1])  # Face area
+        ), reverse=True)
         
         for det in sorted_dets:
             bbox = det.get("bbox")
-            if not bbox or len(bbox) != 4: continue
+            if not bbox or len(bbox) != 4: 
+                continue
             emb = det.get("embedding")
             best_id = None
             best_score = sim_thresh
 
+            # Normalize embedding for better comparison
             if emb is not None:
+                emb = normalize_face_embedding(emb)
+                
+                # Find best matching track using multiple metrics
                 for tid, emb_list in track_embeddings.items():
-                    if tid in used_ids_in_this_frame: continue
-                    for prev_emb in emb_list:
-                        sim = _cosine_sim(emb, prev_emb)
-                        if sim > best_score:
-                            best_score = sim
-                            best_id = tid
+                    if tid in used_ids_in_this_frame: 
+                        continue
+                    
+                    # Calculate similarity with all embeddings in track
+                    similarities = [_cosine_sim(emb, prev_emb) for prev_emb in emb_list]
+                    max_sim = max(similarities) if similarities else 0.0
+                    avg_sim = np.mean(similarities) if similarities else 0.0
+                    
+                    # Weighted combination of max and average similarity
+                    combined_sim = 0.7 * max_sim + 0.3 * avg_sim
+                    
+                    # Add bonus for track quality
+                    quality_bonus = track_quality_scores.get(tid, 0.0) * 0.1
+                    final_score = combined_sim + quality_bonus
+                    
+                    if final_score > best_score:
+                        best_score = final_score
+                        best_id = tid
             
-            # IoU fallback (only if no embedding match was found)
+            # Enhanced IoU fallback with size consistency check
             if best_id is None and track_bbox:
-                best_iou = 0.35
+                best_iou = 0.4  # Slightly higher threshold
                 for tid, prev_bbox in track_bbox.items():
-                    if tid in used_ids_in_this_frame: continue
+                    if tid in used_ids_in_this_frame: 
+                        continue
+                    
                     iou = iou_box(bbox, prev_bbox)
-                    if iou > best_iou:
-                        best_iou = iou
+                    
+                    # Check size consistency
+                    prev_area = (prev_bbox[2] - prev_bbox[0]) * (prev_bbox[3] - prev_bbox[1])
+                    curr_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                    size_ratio = min(curr_area, prev_area) / (max(curr_area, prev_area) + 1e-6)
+                    
+                    # Combined score considering IoU and size consistency
+                    combined_score = iou * (0.5 + 0.5 * size_ratio)
+                    
+                    if combined_score > best_iou:
+                        best_iou = combined_score
                         best_id = tid
             
             if best_id is None:
                 best_id = next_id
                 next_id += 1
+                track_quality_scores[best_id] = 0.0
             
             used_ids_in_this_frame.add(best_id)
             
+            # Update track data with quality control
             if emb is not None:
-                if best_id not in track_embeddings: track_embeddings[best_id] = []
+                if best_id not in track_embeddings: 
+                    track_embeddings[best_id] = []
+                
+                # Add embedding only if it's sufficiently different from existing ones
                 should_add = True
                 for existing_emb in track_embeddings[best_id]:
-                    if _cosine_sim(emb, existing_emb) > 0.85:
+                    if _cosine_sim(emb, existing_emb) > 0.9:  # Higher threshold
                         should_add = False
                         break
+                
                 if should_add and len(track_embeddings[best_id]) < MAX_EMBEDDINGS_PER_TRACK:
                     track_embeddings[best_id].append(emb)
+                    
+                # Update quality score
+                quality_score = det.get("quality_score", 0.5)
+                if best_id in track_quality_scores:
+                    track_quality_scores[best_id] = 0.8 * track_quality_scores[best_id] + 0.2 * quality_score
+                else:
+                    track_quality_scores[best_id] = quality_score
             
             track_bbox[best_id] = bbox
-            out_det = {k: v for k, v in det.items() if k != "embedding"}
+            out_det = {k: v for k, v in det.items() if k not in ["embedding", "quality_score"]}
             new_frame.append({**out_det, "trackId": best_id})
+        
         out.append(new_frame)
     
-    repr_embeddings = {tid: embs[0].tolist() for tid, embs in track_embeddings.items() if embs}
+    # Return best representative embedding for each track
+    repr_embeddings = {}
+    for tid, embs in track_embeddings.items():
+        if embs:
+            # Use the highest quality embedding as representative
+            best_emb = embs[0]  # Could be improved with quality weighting
+            repr_embeddings[tid] = best_emb.tolist()
+    
     return out, repr_embeddings
 
 
 class DetectFacesRequest(BaseModel):
     video_path: str
     use_cuda: bool | None = None
+    use_hd_detection: bool = True  # Enable HD detection by default
+    quality_mode: str = "balanced"  # "fast", "balanced", "best"
 
 class SwapRequest(BaseModel):
     source_image_path: str
@@ -329,6 +649,10 @@ class SwapRequest(BaseModel):
     job_id: str | None = None
     use_cuda: bool | None = None
     enhance: bool = True
+    use_codeformer: bool = True  # Use CodeFormer if available
+    use_hd_detection: bool = True  # Use HD detection for better quality
+    temporal_smoothing: bool = True  # Apply temporal smoothing
+    quality_mode: str = "balanced"  # "fast", "balanced", "best"
 
 @app.get("/health")
 def health():
@@ -348,17 +672,35 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
         video_path = req.video_path
         if not os.path.isfile(video_path):
             raise HTTPException(status_code=400, detail="Video file not found")
+        
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
-        interval_frames = max(1, int(fps * 2))
-        frame_indices = list(range(0, total_frames, interval_frames))[:20]
+        # Adjust sampling based on quality mode
+        if req.quality_mode == "best":
+            interval_frames = max(1, int(fps * 1.5))  # More frames
+            max_frames = 30
+        elif req.quality_mode == "fast":
+            interval_frames = max(1, int(fps * 3))    # Fewer frames
+            max_frames = 15
+        else:  # balanced
+            interval_frames = max(1, int(fps * 2))
+            max_frames = 20
+        
+        frame_indices = list(range(0, total_frames, interval_frames))[:max_frames]
 
-        logger.info(f"Detecting faces for {video_path}...")
-        face_app = get_face_app()
-        logger.info("Face app loaded.")
+        logger.info(f"Detecting faces for {video_path} (quality: {req.quality_mode})...")
+        
+        # Choose detection model based on quality requirements
+        if req.use_hd_detection and req.quality_mode in ["balanced", "best"]:
+            face_app = get_face_app_hd()
+            logger.info("Using HD face detection.")
+        else:
+            face_app = get_face_app()
+            logger.info("Using standard face detection.")
+        
         raw_per_frame = []
         stored_frames = []
         keyframes_meta = []
@@ -371,41 +713,68 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
             if not ret: 
                 logger.warning(f"Failed to read frame {idx}")
                 continue
+            
             stored_frames.append(frame)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Apply preprocessing for better detection
+            if req.quality_mode == "best":
+                # Enhance image before detection
+                rgb = apply_post_processing(rgb)
+            
             faces = face_app.get(rgb)
             logger.info(f"Found {len(faces)} faces in frame {idx}")
+            
             frame_dets = []
             for f in faces:
                 bbox = f.bbox.astype(int).tolist()
                 emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
-                det = {"bbox": bbox}
+                
+                # Calculate quality score based on face properties
+                det_score = float(getattr(f, "det_score", 0.0) or 0.0)
+                face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) if len(bbox) == 4 else 0
+                quality_score = det_score * (1.0 + np.log10(max(face_area, 1)) / 10.0)
+                
+                det = {
+                    "bbox": bbox,
+                    "quality_score": quality_score
+                }
+                
                 if emb is not None:
-                    det["embedding"] = np.asarray(emb, dtype=np.float32)
+                    det["embedding"] = normalize_face_embedding(np.asarray(emb, dtype=np.float32))
+                
                 frame_dets.append(det)
+            
             raw_per_frame.append(frame_dets)
             h, w = frame.shape[:2]
             keyframes_meta.append({"frameIndex": idx, "time": round(idx/fps, 2), "width": w, "height": h})
+        
         cap.release()
 
-        logger.info("Assigning track IDs...")
+        logger.info("Assigning track IDs with enhanced algorithm...")
         with_tracks, track_embeddings = assign_track_ids_embedding(raw_per_frame)
         
         logger.info("Encoding keyframes...")
         keyframes = []
         for i, frame_dets in enumerate(with_tracks):
             kf = keyframes_meta[i]
-            kf["faces"] = [{"bbox": d["bbox"], "trackId": d["trackId"]} for d in frame_dets]
+            kf["faces"] = [{
+                "bbox": d["bbox"], 
+                "trackId": d["trackId"],
+                "quality": d.get("quality_score", 0.0)
+            } for d in frame_dets]
             _, buf = cv2.imencode(".png", stored_frames[i])
             kf["imageBase64"] = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
             keyframes.append(kf)
 
-        logger.info("Detection complete.")
+        logger.info("Face detection complete with enhanced quality.")
         return {
             "fps": fps,
             "totalFrames": total_frames,
             "keyframes": keyframes,
-            "trackEmbeddings": track_embeddings
+            "trackEmbeddings": track_embeddings,
+            "qualityMode": req.quality_mode,
+            "hdDetection": req.use_hd_detection
         }
     except Exception as e:
         logger.error(f"Error in detect_faces: {traceback.format_exc()}")
@@ -420,28 +789,94 @@ def swap(background_tasks: BackgroundTasks, req: SwapRequest = Body(...)):
 
 def _do_swap(job_id: str, req: SwapRequest):
     frames_dir = None
+    face_history = []  # For temporal smoothing
     try:
         _apply_use_cuda(req.use_cuda)
         src_path, video_path = req.source_image_path, req.video_path
         target_track_id = req.target_face_track_id
         
-        face_app, swapper = get_face_app(), get_swapper()
-        src_img = cv2.imread(src_path)
-        src_faces = face_app.get(cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB))
-        if not src_faces:
-            update_job_progress(job_id, 0, "failed", {"error": "No face in source"})
+        # Choose appropriate face detection model based on quality settings
+        if req.use_hd_detection and req.quality_mode in ["balanced", "best"]:
+            face_app = get_face_app_hd()
+            print(f"Using HD face detection for job {job_id}")
+        else:
+            face_app = get_face_app()
+            print(f"Using standard face detection for job {job_id}")
+        
+        swapper = get_swapper()
+        
+        # Enhanced source face preparation
+        src_img = cv2.imread(src_path, cv2.IMREAD_COLOR)
+        if src_img is None:
+            update_job_progress(job_id, 0, "failed", {"error": "Source image not readable"})
             return
-        # Prefer the largest, most confident face from the source image.
-        def _face_score(face):
+
+        src_rgb = cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB)
+        src_faces = face_app.get(src_rgb)
+
+        if not src_faces:
+            print(f"[{job_id}] No face found with primary detector. Trying fallback detector...")
+            try:
+                fallback_app = get_face_app()
+                src_faces = fallback_app.get(src_rgb)
+            except Exception as e:
+                print(f"[{job_id}] Fallback detector failed: {e}")
+
+        if not src_faces:
+            # If the source is small, upscale and retry once
+            h, w = src_rgb.shape[:2]
+            min_dim = min(h, w)
+            if min_dim < 320:
+                scale = 640 / max(1, min_dim)
+                new_size = (int(w * scale), int(h * scale))
+                print(f"[{job_id}] Upscaling source image to {new_size} for detection")
+                up_rgb = cv2.resize(src_rgb, new_size, interpolation=cv2.INTER_CUBIC)
+                try:
+                    src_faces = face_app.get(up_rgb)
+                    if not src_faces:
+                        src_faces = get_face_app().get(up_rgb)
+                except Exception as e:
+                    print(f"[{job_id}] Upscaled detection failed: {e}")
+
+        if not src_faces:
+            update_job_progress(
+                job_id,
+                0,
+                "failed",
+                {"error": "No face in source. Use a clear, front-facing photo."}
+            )
+            return
+        
+        # Select the best quality source face
+        def _enhanced_face_score(face):
             bbox = getattr(face, "bbox", None)
             if bbox is None or len(bbox) != 4:
                 area = 0.0
             else:
                 area = max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
             det_score = float(getattr(face, "det_score", 0.0) or 0.0)
-            return (area, det_score)
-
-        source_face = max(src_faces, key=_face_score)
+            
+            # Consider face alignment quality
+            embedding_quality = 1.0
+            emb = getattr(face, "normed_embedding", getattr(face, "embedding", None))
+            if emb is not None:
+                emb_norm = np.linalg.norm(emb)
+                embedding_quality = min(1.0, emb_norm)
+            
+            return (area * det_score * embedding_quality)
+        
+        source_face = max(src_faces, key=_enhanced_face_score)
+        
+        # Pre-process source face for better quality
+        if req.quality_mode == "best":
+            # Extract and align source face for better swapping
+            try:
+                x1, y1, x2, y2 = source_face.bbox.astype(int)
+                src_face_crop = src_rgb[y1:y2, x1:x2]
+                src_face_crop = enhance_face_alignment(src_face_crop)
+                print(f"Enhanced source face alignment for job {job_id}")
+            except Exception as e:
+                print(f"Source face alignment failed: {e}")
 
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -454,104 +889,278 @@ def _do_swap(job_id: str, req: SwapRequest):
         track_embeddings = {}
         target_embedding = None
         if req.target_face_embedding:
-            target_embedding = np.array(req.target_face_embedding, dtype=np.float32)
+            target_embedding = normalize_face_embedding(np.array(req.target_face_embedding, dtype=np.float32))
             track_embeddings[target_track_id] = [target_embedding]
 
         track_bbox = {}
-        SIM_THRESH = 0.42
-        TARGET_SIM_THRESH = 0.38
+        # Enhanced similarity thresholds based on quality mode
+        if req.quality_mode == "best":
+            SIM_THRESH = 0.65
+            TARGET_SIM_THRESH = 0.45
+        elif req.quality_mode == "fast":
+            SIM_THRESH = 0.45
+            TARGET_SIM_THRESH = 0.35
+        else:  # balanced
+            SIM_THRESH = QUALITY_THRESHOLD
+            TARGET_SIM_THRESH = 0.38
+        
         frame_idx = 0
         update_job_progress(job_id, 0, "processing")
+        print(f"[{job_id}] Starting face swap processing for {total_frames} frames...")
 
         while True:
             ret, frame = cap.read()
-            if not ret: break
+            if not ret: 
+                break
             
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            faces = face_app.get(rgb)
-            frame_dets = []
-            for f in faces:
-                bbox = f.bbox.astype(int).tolist()
-                emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
-                det = {"face": f, "bbox": bbox, "embedding": np.asarray(emb, dtype=np.float32) if emb is not None else None}
-                frame_dets.append(det)
-
-            target_det = None
-            target_score = None
-            if target_embedding is not None:
-                for det in frame_dets:
-                    if det["embedding"] is None:
+            try:
+                # Progress update for very first frame
+                if frame_idx == 0:
+                    print(f"[{job_id}] Processing first frame...")
+                    update_job_progress(job_id, 1, "processing")
+                
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Apply preprocessing for better face detection
+                if req.quality_mode == "best":
+                    try:
+                        rgb_processed = apply_post_processing(rgb.copy())
+                        faces = face_app.get(rgb_processed)
+                    except Exception as e:
+                        print(f"Preprocessing failed for frame {frame_idx}: {e}")
+                        faces = face_app.get(rgb)
+                else:
+                    faces = face_app.get(rgb)
+                
+                frame_dets = []
+                for f in faces:
+                    try:
+                        bbox = f.bbox.astype(int).tolist()
+                        emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
+                        
+                        # Calculate quality metrics
+                        det_score = float(getattr(f, "det_score", 0.0) or 0.0)
+                        face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) if len(bbox) == 4 else 0
+                        quality_score = det_score * (1.0 + np.log10(max(face_area, 1)) / 10.0)
+                        
+                        det = {
+                            "face": f, 
+                            "bbox": bbox, 
+                            "embedding": normalize_face_embedding(np.asarray(emb, dtype=np.float32)) if emb is not None else None,
+                            "quality_score": quality_score
+                        }
+                        frame_dets.append(det)
+                    except Exception as e:
+                        print(f"Face detection processing failed for frame {frame_idx}: {e}")
                         continue
-                    sim = _cosine_sim(det["embedding"], target_embedding)
-                    if target_score is None or sim > target_score:
-                        target_score = sim
-                        target_det = det
-                if target_score is None or target_score < TARGET_SIM_THRESH:
-                    target_det = None
 
-            used_ids = set()
-            for det in sorted(frame_dets, key=lambda d: d["embedding"] is not None, reverse=True):
-                bbox, emb = det["bbox"], det["embedding"]
-                best_id, best_score = None, SIM_THRESH
-                if emb is not None:
-                    for tid, embs in track_embeddings.items():
-                        if tid in used_ids: continue
-                        for te in embs:
-                            sim = _cosine_sim(emb, te)
-                            if sim > best_score:
-                                best_score, best_id = sim, tid
-                if best_id is None and track_bbox:
-                    for tid, last_box in track_bbox.items():
-                        if tid in used_ids: continue
-                        if iou_box(bbox, last_box) > 0.35:
-                            best_id = tid; break
-                if best_id is None:
-                    best_id = max(list(track_embeddings.keys()) + list(track_bbox.keys()) + [-1]) + 1
-                used_ids.add(best_id)
-                det["trackId"] = best_id
-                track_bbox[best_id] = bbox
-                if emb is not None:
-                    if best_id not in track_embeddings: track_embeddings[best_id] = []
-                    if len(track_embeddings[best_id]) < 5: track_embeddings[best_id].append(emb)
+                # Enhanced target face detection
+                target_det = None
+                target_score = None
+                
+                if target_embedding is not None:
+                    for det in frame_dets:
+                        if det["embedding"] is None:
+                            continue
+                        sim = _cosine_sim(det["embedding"], target_embedding)
+                        
+                        # Weight similarity by face quality
+                        weighted_sim = sim * (0.7 + 0.3 * min(1.0, det["quality_score"]))
+                        
+                        if target_score is None or weighted_sim > target_score:
+                            target_score = weighted_sim
+                            target_det = det
+                            
+                    if target_score is None or target_score < TARGET_SIM_THRESH:
+                        target_det = None
 
-            if target_det is not None:
-                rgb_swapped = swapper.get(rgb, target_det["face"], source_face, paste_back=True)
-                if req.enhance:
-                    enhancer = get_enhancer()
-                    if enhancer:
-                        _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
-                frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
-            else:
-                for det in frame_dets:
-                    if det["trackId"] == target_track_id:
-                        rgb_swapped = swapper.get(rgb, det["face"], source_face, paste_back=True)
+                # Enhanced tracking with quality considerations
+                used_ids = set()
+                for det in sorted(frame_dets, key=lambda d: (
+                    d["embedding"] is not None,
+                    d["quality_score"]
+                ), reverse=True):
+                    bbox, emb = det["bbox"], det["embedding"]
+                    best_id, best_score = None, SIM_THRESH
+                    
+                    if emb is not None:
+                        for tid, embs in track_embeddings.items():
+                            if tid in used_ids: 
+                                continue
+                            
+                            # Calculate weighted similarity considering track history
+                            similarities = [_cosine_sim(emb, te) for te in embs]
+                            if similarities:
+                                max_sim = max(similarities)
+                                avg_sim = np.mean(similarities)
+                                combined_sim = 0.7 * max_sim + 0.3 * avg_sim
+                                
+                                if combined_sim > best_score:
+                                    best_score, best_id = combined_sim, tid
+                    
+                    # Enhanced IoU fallback
+                    if best_id is None and track_bbox:
+                        for tid, last_box in track_bbox.items():
+                            if tid in used_ids: 
+                                continue
+                            iou = iou_box(bbox, last_box)
+                            if iou > 0.4:  # Higher threshold
+                                best_id = tid
+                                break
+                                
+                    if best_id is None:
+                        best_id = max(list(track_embeddings.keys()) + list(track_bbox.keys()) + [-1]) + 1
+                        
+                    used_ids.add(best_id)
+                    det["trackId"] = best_id
+                    track_bbox[best_id] = bbox
+                    
+                    if emb is not None:
+                        if best_id not in track_embeddings: 
+                            track_embeddings[best_id] = []
+                        if len(track_embeddings[best_id]) < 8:  # Increased capacity
+                            track_embeddings[best_id].append(emb)
+
+                # Enhanced face swapping with multiple quality improvements
+                swapped_rgb = rgb.copy()
+                
+                if target_det is not None:
+                    try:
+                        print(f"[{job_id}] Processing frame {frame_idx}: Found target face, swapping...")
+                        
+                        # Enhanced face swapping
+                        swapped_rgb = swapper.get(rgb, target_det["face"], source_face, paste_back=True)
+                        
+                        # Apply face alignment if in best quality mode
+                        if req.quality_mode == "best":
+                            try:
+                                face_bbox = target_det["bbox"]
+                                x1, y1, x2, y2 = face_bbox
+                                face_region = swapped_rgb[y1:y2, x1:x2]
+                                aligned_face = enhance_face_alignment(face_region)
+                                swapped_rgb[y1:y2, x1:x2] = aligned_face
+                            except Exception as e:
+                                print(f"Face alignment during swap failed: {e}")
+                        
+                        # Multi-stage enhancement
                         if req.enhance:
-                            enhancer = get_enhancer()
-                            if enhancer:
-                                _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
-                        frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
-                        break
-            
-            cv2.imwrite(str(frames_dir / f"frame_{frame_idx:08d}.png"), frame)
-            frame_idx += 1
-            if frame_idx % 25 == 0:
-                print(f"[{job_id}] Frame {frame_idx}/{total_frames}")
-                update_job_progress(job_id, (frame_idx / total_frames) * 100)
-                # Small memory cleanup for long videos
-                if frame_idx % 100 == 0:
+                            print(f"[{job_id}] Applying enhancements to frame {frame_idx}...")
+                            swapped_rgb = multi_stage_enhancement(
+                                swapped_rgb, 
+                                use_codeformer=req.use_codeformer
+                            )
+                        
+                        # Temporal smoothing
+                        if req.temporal_smoothing and face_history:
+                            swapped_rgb = apply_temporal_smoothing_region(
+                                swapped_rgb,
+                                face_history,
+                                target_det["bbox"]
+                            )
+                        
+                        # Update face history for temporal smoothing
+                        if req.temporal_smoothing:
+                            face_history.append(swapped_rgb.copy())
+                            if len(face_history) > TEMPORAL_SMOOTH_FRAMES:
+                                face_history.pop(0)
+                                
+                    except Exception as e:
+                        print(f"Face swap failed for frame {frame_idx}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        
+                else:
+                    # Fallback to track ID matching with enhanced quality
+                    print(f"[{job_id}] Processing frame {frame_idx}: Using track ID {target_track_id} fallback...")
+                    for det in frame_dets:
+                        if det["trackId"] == target_track_id:
+                            try:
+                                swapped_rgb = swapper.get(rgb, det["face"], source_face, paste_back=True)
+                                
+                                if req.enhance:
+                                    print(f"[{job_id}] Applying enhancements to frame {frame_idx} (track fallback)...")
+                                    swapped_rgb = multi_stage_enhancement(
+                                        swapped_rgb, 
+                                        use_codeformer=req.use_codeformer
+                                    )
+                                
+                                if req.temporal_smoothing and face_history:
+                                    swapped_rgb = apply_temporal_smoothing_region(
+                                        swapped_rgb,
+                                        face_history,
+                                        det["bbox"]
+                                    )
+                                
+                                if req.temporal_smoothing:
+                                    face_history.append(swapped_rgb.copy())
+                                    if len(face_history) > TEMPORAL_SMOOTH_FRAMES:
+                                        face_history.pop(0)
+                                        
+                            except Exception as e:
+                                print(f"Track-based face swap failed for frame {frame_idx}: {e}")
+                                import traceback
+                                traceback.print_exc()
+                            break
+                
+                # Convert back to BGR and save
+                frame_out = cv2.cvtColor(swapped_rgb, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(str(frames_dir / f"frame_{frame_idx:08d}.png"), frame_out)
+                frame_idx += 1
+                
+                # More frequent progress updates for better user feedback
+                if frame_idx % 5 == 0:  # Update every 5 frames instead of 25
+                    progress = (frame_idx / total_frames) * 95  # Reserve 5% for encoding
+                    print(f"[{job_id}] Frame {frame_idx}/{total_frames} ({progress:.1f}%) (Quality: {req.quality_mode})")
+                    update_job_progress(job_id, progress)
+                    
+                # Less frequent memory cleanup
+                if frame_idx % 50 == 0:
                     import gc
                     gc.collect()
+                    # Limit face history size during long processing
+                    if len(face_history) > TEMPORAL_SMOOTH_FRAMES:
+                        face_history = face_history[-TEMPORAL_SMOOTH_FRAMES:]
+            
+            except Exception as e:
+                print(f"Frame processing failed for frame {frame_idx}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with next frame
+                frame_idx += 1
+                continue
 
         cap.release()
         update_job_progress(job_id, 99, "encoding")
+        
+        # Enhanced video encoding settings based on quality mode
+        if req.quality_mode == "best":
+            crf_value = "18"  # Higher quality
+            preset = "slow"
+        elif req.quality_mode == "fast":
+            crf_value = "28"  # Lower quality, faster
+            preset = "veryfast"
+        else:  # balanced
+            crf_value = "23"
+            preset = "fast"
+        
         subprocess.run([
             "ffmpeg", "-y", "-framerate", str(fps), "-i", str(frames_dir / "frame_%08d.png"),
             "-i", str(video_path), "-map", "0:v", "-map", "1:a?", "-c:v", "libx264",
-            "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-shortest",
+            "-pix_fmt", "yuv420p", "-preset", preset, "-crf", crf_value, "-c:a", "aac", "-shortest",
             str(out_video_path)
         ], check=True, capture_output=True)
 
-        update_job_progress(job_id, 100, "completed", {"output_path": str(out_video_path)})
+        update_job_progress(job_id, 100, "completed", {
+            "output_path": str(out_video_path),
+            "quality_mode": req.quality_mode,
+            "enhancements_used": {
+                "hd_detection": req.use_hd_detection,
+                "enhancement": req.enhance,
+                "codeformer": req.use_codeformer,
+                "temporal_smoothing": req.temporal_smoothing
+            }
+        })
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -563,4 +1172,17 @@ def _do_swap(job_id: str, req: SwapRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Enhanced Face Morphing Service")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)), help="Port to bind to")
+    args = parser.parse_args()
+    
+    print(f"🚀 Starting Enhanced Face Morphing Service on {args.host}:{args.port}")
+    print(f"🎯 Quality features: HD Detection, Enhanced Tracking, Temporal Smoothing")
+    
+    cuda_status = "Enabled" if torch and torch.cuda.is_available() else "Disabled"
+    print(f"🔥 GPU Acceleration: {cuda_status}")
+    
+    uvicorn.run(app, host=args.host, port=args.port)

@@ -73,6 +73,15 @@ export default function MorphWizard({ project, onClose, onComplete }) {
           const status = await morphGetProgress(jobId);
           setJobProgress(status);
 
+          if (status.status === 'failed' || status.error || status.result?.error) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            const msg = status.result?.error || status.error || 'Face swap failed';
+            setError(msg);
+            setLoading(false);
+            return;
+          }
+
           if (status.status === 'completed' && status.asset) {
             clearInterval(pollInterval);
             pollInterval = null;
