@@ -441,6 +441,39 @@ def apply_temporal_smoothing_region(frame_rgb, face_history, bbox, alpha=0.7):
     smoothed[y1:y2, x1:x2] = region
     return smoothed
 
+def blend_face_region(base_rgb, swapped_rgb, bbox, feather=0.18):
+    """Blend swapped face with base using a soft elliptical mask to reduce seams."""
+    if bbox is None or len(bbox) != 4:
+        return swapped_rgb
+
+    h, w = swapped_rgb.shape[:2]
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    pad = int(max(x2 - x1, y2 - y1) * 0.08)
+    x1 = max(0, min(w - 1, x1 - pad))
+    y1 = max(0, min(h - 1, y1 - pad))
+    x2 = max(0, min(w, x2 + pad))
+    y2 = max(0, min(h, y2 + pad))
+
+    if x2 <= x1 or y2 <= y1:
+        return swapped_rgb
+
+    base_region = base_rgb[y1:y2, x1:x2]
+    swap_region = swapped_rgb[y1:y2, x1:x2]
+    rh, rw = swap_region.shape[:2]
+
+    mask = np.zeros((rh, rw), dtype=np.float32)
+    center = (rw // 2, rh // 2)
+    axes = (max(1, int(rw * 0.45)), max(1, int(rh * 0.55)))
+    cv2.ellipse(mask, center, axes, 0, 0, 360, 1, -1)
+
+    k = max(9, int(min(rw, rh) * feather) | 1)
+    mask = cv2.GaussianBlur(mask, (k, k), 0)
+    mask = mask[..., None]
+
+    blended = base_region * (1 - mask) + swap_region * mask
+    swapped_rgb[y1:y2, x1:x2] = blended.astype(np.uint8)
+    return swapped_rgb
+
 def multi_stage_enhancement(face_img, use_codeformer=True):
     """Apply multiple enhancement stages for best quality"""
     enhanced = face_img.copy()
@@ -1057,6 +1090,9 @@ def _do_swap(job_id: str, req: SwapRequest):
                                 face_history,
                                 target_det["bbox"]
                             )
+
+                        # Blend the face region to reduce seam artifacts
+                        swapped_rgb = blend_face_region(rgb, swapped_rgb, target_det["bbox"])
                         
                         # Update face history for temporal smoothing
                         if req.temporal_smoothing:
@@ -1090,6 +1126,9 @@ def _do_swap(job_id: str, req: SwapRequest):
                                         face_history,
                                         det["bbox"]
                                     )
+
+                                # Blend the face region to reduce seam artifacts
+                                swapped_rgb = blend_face_region(rgb, swapped_rgb, det["bbox"])
                                 
                                 if req.temporal_smoothing:
                                     face_history.append(swapped_rgb.copy())
