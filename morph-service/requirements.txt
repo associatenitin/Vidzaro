@@ -10,6 +10,13 @@ numpy>=1.24.0
 # CUDA 12 libs via pip (no full CUDA Toolkit install needed); onnxruntime-gpu finds DLLs from these
 nvidia-cublas-cu12>=12.4.0
 nvidia-cudnn-cu12>=9.0.0
+nvidia-cufft-cu12>=11.0.0
+nvidia-curand-cu12>=10.0.0
+nvidia-cusolver-cu12>=11.0.0
+nvidia-cusparse-cu12>=12.0.0
+nvidia-cuda-runtime-cu12>=12.0.0
+nvidia-cuda-nvrtc-cu12>=12.0.0
+nvidia-nvjitlink-cu12>=12.0.0
 
 # API
 fastapi>=0.104.0

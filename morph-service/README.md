@@ -89,8 +89,12 @@ If you see an error like **"cublasLt64_12.dll which is missing"** or **"Error lo
 
 **To use GPU (choose one):**
 
-1. **CUDA via pip (recommended if the full toolkit fails to install)**  
-   The project already depends on `nvidia-cublas-cu12` and `nvidia-cudnn-cu12`. When you `pip install -r requirements.txt`, these install the CUDA 12 runtime DLLs into your venv. The service adds their paths to `PATH` at startup so `onnxruntime-gpu` can find them. You still need an **NVIDIA driver** (check with `nvidia-smi`), but you do **not** need to install the full CUDA 12 Toolkit or set any system PATH. Just install the backend + morph deps and run the service.
+1. **CUDA via pip (recommended)**  
+   The project depends on a full suite of `nvidia-*-cu12` packages (cublas, cudnn, cufft, curand, cusolver, cusparse, cuda-runtime). When you `pip install -r requirements.txt`, these install all the necessary CUDA 12 runtime DLLs directly into your virtual environment. 
+   
+   **How it works**: At startup, `main.py` automatically scans your `site-packages` and registers these DLL directories with Windows using `os.add_dll_directory()`. This allows `onnxruntime-gpu` to find libraries like `cublasLt64_12.dll` and `cudart64_12.dll` without any manual setup. 
+   
+   *Note: You still need an **NVIDIA driver** (check with `nvidia-smi`), but you do **not** need to install the standalone CUDA Toolkit.*
 
 2. **Full CUDA 12 Toolkit**  
    Install [CUDA 12](https://developer.nvidia.com/cuda-12-4-0-download-archive) and add its `bin` folder to your system PATH. Use this if you prefer the toolkit or if the pip-based approach does not work on your system.
