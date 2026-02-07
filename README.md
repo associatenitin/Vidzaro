@@ -2,237 +2,269 @@
 
 **Edit videos. Zero limits.**
 
-Vidzaro is a FREE, open-source, web-based video editor inspired by CapCut. Built with zero cost, no watermarks, and no vendor lock-in.
+Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor lock-in—just upload, edit, and export. Record your screen with system audio, microphone, and webcam overlay, then edit on a multi-track timeline with filters, speed control, text overlays, and more.
+
+---
 
 ## Features
 
-### MVP Features
-- ✅ Upload video files (MP4, WebM, MOV, AVI)
-- ✅ Timeline-based editing UI
-- ✅ Trim video clips
-- ✅ Split clips at playhead
-- ✅ Reorder clips on timeline (drag & drop)
-- ✅ Real-time preview using HTML5 video
-- ✅ Export final video as MP4 (H.264)
+### Editing
 
-### Coming Soon (Phase 2)
-- Text overlays (titles, captions)
-- Audio control (mute, volume, background music)
-- Transitions (fade, slide)
-- Filters (brightness, contrast, grayscale)
-- Speed control (slow / fast)
-- Save & load projects as JSON
+- **Timeline** — Multi-track timeline (video and audio tracks) with drag-and-drop reordering
+- **Trim** — Drag clip edges to trim in/out points
+- **Split** — Split clips at the playhead (toolbar or **S** key)
+- **Reorder** — Drag clips horizontally; drop assets from the library onto any track
+- **Tools** — Select tool (**V**) and Ripple edit (**B**)
+- **Clip settings** (right-click clip) — Filters, playback speed (0.25x–4x), volume, fade in/out, text overlay
+- **Text overlays** — Per-clip text with position (top/center/bottom), size, color, and animations (Fade, Slide, Bounce)
+- **Video filters** — Grayscale, Sepia, Invert, Blur, Brighten, Darken, Contrast, Saturate, Hue Shift, Vintage, Cool/Warm tone
+- **Detach audio** — Extract audio from a video clip to a separate audio track
+- **Dynamic tracks** — Add or remove video and audio tracks; rename tracks
 
-## Tech Stack
+### Project & File
 
-- **Backend**: Node.js + Express
-- **Video Engine**: FFmpeg (via fluent-ffmpeg)
-- **Frontend**: React + Vite
-- **Styling**: Tailwind CSS
-- **State**: React Hooks + Context API
-- **Storage**: Local filesystem
+- **Save project** — Save as JSON to disk (File System Access API or download)
+- **Load project** — Open a saved project file (JSON)
+- **New project** — Start fresh (with optional confirmation)
+- **Auto-save** — Project state is auto-saved to the browser; recovered on reload
+
+### Screen recording
+
+- **Capture** — Full screen, window, or browser tab (with optional custom region)
+- **System audio** — Capture desktop audio (with volume control)
+- **Microphone** — Optional mic with volume and noise suppression
+- **Webcam overlay** — Picture-in-picture webcam with position (corners), size, shape (circle/square), and optional background blur; **live preview** while recording
+- **Overlays** (when recording this tab) — Cursor highlight, click effect, keyboard shortcut display
+- **Output** — MP4, WebM, or MKV; 720p / 1080p / 4K; 15–60 fps; configurable bitrate
+- **Preview & trim** — After recording, preview and optionally trim before adding to the project
+
+### Export & share
+
+- **Export** — Render timeline to video with resolution (1080p, 720p, 480p) and quality (High, Medium, Low); progress indicator and download when done
+- **Share** — Create shareable links for media assets with configurable expiry (1 day, 7 days, 30 days, or never)
+
+### Interface
+
+- **Menu bar** — File (New, Open, Save, Save As), Edit (Undo, Redo, Delete, Deselect), View (Reset timeline height), Record (Start Recording), Export (Export Video), Help (Keyboard Shortcuts, About)
+- **Keyboard shortcuts** — Playback (Space), Undo/Redo (Ctrl+Z / Ctrl+Shift+Z), tools (V, B, S), seek (←/→, Shift+←/→, Home), delete clip (Del), deselect (Esc), file (Ctrl+N, Ctrl+O, Ctrl+S)
+- **Media library** — Upload videos (MP4, WebM, MOV, AVI, etc.); thumbnails and waveforms; filter by type; add to timeline by drag or “Add to track”; rename, remove, share
+- **Resizable timeline** — Drag the divider to resize the timeline panel
+
+---
+
+## Tech stack
+
+- **Backend** — Node.js, Express
+- **Video engine** — FFmpeg (fluent-ffmpeg)
+- **Frontend** — React 18, Vite
+- **Styling** — Tailwind CSS
+- **State** — React hooks (no global store)
+- **Drag and drop** — @dnd-kit (timeline reorder, library → timeline)
+- **Storage** — Local filesystem (uploads, exports, projects, thumbnails)
+
+---
 
 ## Prerequisites
 
 - **Node.js** 18+ and npm
-- **FFmpeg** installed system-wide
+- **FFmpeg** installed and on your PATH
 
 ### Installing FFmpeg
 
 **macOS:**
+
 ```bash
 brew install ffmpeg
 ```
 
 **Ubuntu/Debian:**
+
 ```bash
 sudo apt-get update
 sudo apt-get install ffmpeg
 ```
 
-**Windows:**
+**Windows**
 
-**Option 1: Using Chocolatey (Recommended)**
-```powershell
-# Run PowerShell as Administrator, then:
-choco install ffmpeg
-```
+- **Chocolatey:** `choco install ffmpeg` (run PowerShell as Administrator)
+- **winget:** `winget install ffmpeg`
+- **Manual:** Download from [ffmpeg.org](https://ffmpeg.org/download.html), extract, and add the `bin` folder to your system PATH.
 
-**Option 2: Using winget**
-```powershell
-winget install ffmpeg
-```
+Verify:
 
-**Option 3: Manual Installation**
-1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-2. Extract the ZIP file
-3. Add the `bin` folder to your system PATH:
-   - Open System Properties → Environment Variables
-   - Add the path to `ffmpeg\bin` to the PATH variable
-4. Restart your terminal
-
-**Verify installation:**
 ```bash
 ffmpeg -version
 ```
 
-**Troubleshooting Chocolatey Installation:**
-
-If you encounter errors when installing with Chocolatey:
-
-1. **"Not running from an elevated command shell"** - You must run PowerShell as Administrator:
-   - Right-click on PowerShell → "Run as Administrator"
-   - Then run `choco install ffmpeg`
-
-2. **Lock file access errors** - If you see lock file errors, a previous installation may have crashed:
-   ```powershell
-   # Run PowerShell as Administrator, then remove the lock file:
-   Remove-Item "C:\ProgramData\chocolatey\lib\c00565a56f0e64a50f2ea5badcb97694d43e0755" -Force -ErrorAction SilentlyContinue
-   # Then try installing again:
-   choco install ffmpeg
-   ```
-
-3. **Access denied errors** - Ensure you're running as Administrator and no other Chocolatey processes are running.
-
-**Note:** If FFmpeg is not recognized after installation, make sure it's added to your PATH and restart your terminal/PowerShell window.
+---
 
 ## Installation
 
-1. Clone the repository:
 ```bash
 git clone <repository-url>
 cd Vidzaro
 ```
 
-2. Install backend dependencies:
+**Backend:**
+
 ```bash
 cd backend
 npm install
 ```
 
-3. Install frontend dependencies:
+**Frontend:**
+
 ```bash
 cd ../frontend
 npm install
 ```
 
-## Running the Application
+---
 
-### Development Mode
+## Running the application
 
-1. Start the backend server (from `backend/` directory):
-```bash
-npm run dev
-```
-Backend runs on `http://localhost:3001`
+### Development
 
-2. Start the frontend dev server (from `frontend/` directory):
-```bash
-npm run dev
-```
-Frontend runs on `http://localhost:3000`
+1. **Backend** (from `backend/`):
 
-3. Open your browser to `http://localhost:3000`
+   ```bash
+   npm run dev
+   ```
 
-### Production Build
+   Runs at `http://localhost:3001`.
+
+2. **Frontend** (from `frontend/`):
+
+   ```bash
+   npm run dev
+   ```
+
+   Runs at `http://localhost:3000` and proxies `/api` to the backend.
+
+3. Open **http://localhost:3000** in your browser.
+
+### Production
 
 1. Build the frontend:
-```bash
-cd frontend
-npm run build
-```
 
-2. Serve the backend (which will also serve the frontend static files):
-```bash
-cd backend
-npm start
-```
+   ```bash
+   cd frontend
+   npm run build
+   ```
 
-## Project Structure
+2. Serve via the backend (static files can be mounted from `frontend/dist` if configured):
+
+   ```bash
+   cd backend
+   npm start
+   ```
+
+---
+
+## Project structure
 
 ```
 Vidzaro/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/          # API routes
-│   │   ├── services/        # Business logic (FFmpeg, projects)
-│   │   ├── utils/           # Utilities (file handling, validation)
-│   │   └── server.js        # Express server
-│   ├── uploads/             # Uploaded video files
-│   ├── projects/            # JSON project files
-│   └── exports/             # Exported videos
+│   │   ├── routes/       # upload, video, export, projects, recordings, shares
+│   │   ├── services/     # FFmpeg, project, share
+│   │   ├── utils/        # errorHandler, fileHandler, validation
+│   │   └── server.js
+│   ├── uploads/          # Uploaded media
+│   ├── projects/         # Saved project JSON (if saved to server)
+│   ├── exports/          # Exported videos
+│   └── thumbnails/       # Generated thumbnails
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React components
-│   │   ├── hooks/           # Custom React hooks
-│   │   ├── services/        # API service layer
-│   │   └── App.jsx          # Main app component
+│   │   ├── components/
+│   │   │   ├── Export/   # Export panel
+│   │   │   ├── Library/  # Media library
+│   │   │   ├── MenuBar/  # App menu (File, Edit, View, Record, Export, Help)
+│   │   │   ├── Preview/  # Video player
+│   │   │   ├── Project/  # FileDialog, SaveDialog
+│   │   │   ├── Recorder/ # Recorder, RecorderOverlay, RegionSelector
+│   │   │   ├── Share/    # Share dialog
+│   │   │   ├── Timeline/ # Timeline, Clip
+│   │   │   ├── Toolbar/  # Play, time, undo/redo, tools, split
+│   │   │   └── Upload/   # Upload area
+│   │   ├── hooks/        # useProject, useVideo, useRecording*
+│   │   ├── services/     # api.js
+│   │   └── App.jsx
 │   └── package.json
-└── README.md
+├── README.md
+└── TODO.md
 ```
 
-## API Endpoints
+---
 
-### Upload
-- `POST /api/upload` - Upload a video file
+## API overview
 
-### Video Operations
-- `GET /api/video/:id` - Stream video file
-- `GET /api/video/:id/info` - Get video metadata
-- `POST /api/video/trim` - Trim a video clip
-- `POST /api/video/split` - Split video at timestamp
+| Area        | Endpoints |
+|------------|-----------|
+| **Upload** | `POST /api/upload` |
+| **Video**  | `GET /api/video/:id`, `GET /api/video/:id/info`, `GET /api/video/:id/thumbnails`, `GET /api/video/:id/waveform`, `POST /api/video/trim`, `POST /api/video/split` |
+| **Export** | `POST /api/export`, `GET /api/export/:jobId/status`, `GET /api/export/:jobId/download` |
+| **Projects** | `GET /api/projects`, `GET /api/projects/:id`, `POST /api/projects`, `POST /api/projects/load-from-content`, `DELETE /api/projects/:id` |
+| **Recordings** | `POST /api/recordings/finalize` (upload WebM, optional trim/convert) |
+| **Shares**  | `POST /api/shares`, `GET /api/shares/:id` |
+| **Health** | `GET /api/health` |
 
-### Projects
-- `GET /api/projects` - List all projects
-- `GET /api/projects/:id` - Load a project
-- `POST /api/projects` - Save a project
-- `DELETE /api/projects/:id` - Delete a project
+---
 
-### Export
-- `POST /api/export` - Start video export job
-- `GET /api/export/:jobId/status` - Check export status
-- `GET /api/export/:jobId/download` - Download exported video
+## Usage (quick start)
 
-## Usage
+1. **Upload or record** — Drag videos into the media library or use **Record** from the menu to capture screen + mic + webcam.
+2. **Add to timeline** — Drag an asset from the library onto a track, or use “Add to track” for a specific track.
+3. **Edit** — Trim (drag clip edges), split (place playhead, press **S** or click Split), reorder (drag clips). Right-click a clip for filters, speed, volume, fades, and text overlay.
+4. **Preview** — Use Play/Pause and the scrubber; select an asset in the library to preview it in the player.
+5. **Save** — **File → Save** (or Ctrl+S) to save the project as JSON.
+6. **Export** — **Export → Export Video...** to render and download the final video.
+7. **Share** — Use the share action on a library asset to create a shareable link.
 
-1. **Upload a video**: Drag and drop or click to select a video file
-2. **Add to timeline**: Uploaded videos automatically appear on the timeline
-3. **Trim clips**: Drag the left/right edges of clips to trim
-4. **Split clips**: Position playhead and click "Split" button
-5. **Reorder clips**: Drag clips horizontally on the timeline
-6. **Preview**: Use the play button to preview your edits
-7. **Export**: Click "Export" to generate final MP4 video
+---
+
+## Keyboard shortcuts
+
+| Action        | Shortcut        |
+|---------------|-----------------|
+| Play / Pause  | Space           |
+| Undo         | Ctrl+Z          |
+| Redo         | Ctrl+Shift+Z / Ctrl+Y |
+| Select tool  | V               |
+| Ripple tool  | B               |
+| Split at playhead | S        |
+| Seek 1 frame | ← / →           |
+| Seek 1 second | Shift+← / Shift+→ |
+| Go to start  | Home            |
+| Delete clip  | Del / Backspace |
+| Deselect     | Esc             |
+| New project  | Ctrl+N          |
+| Open         | Ctrl+O          |
+| Save         | Ctrl+S          |
+| Stop recording | Ctrl+Shift+R  |
+
+Full list is available in the app under **Help → Keyboard Shortcuts**.
+
+---
 
 ## Development
 
-### Backend Development
-- Uses ES modules (`type: "module"`)
-- FFmpeg commands are logged for debugging
-- Error handling with user-friendly messages
+- **Backend:** ES modules; `npm run dev` uses `node --watch`.
+- **Frontend:** Vite with HMR; Tailwind for styles; no TypeScript.
+- **Proxy:** Frontend dev server proxies `/api` to `http://localhost:3001`.
 
-### Frontend Development
-- Hot module replacement with Vite
-- Tailwind CSS for styling
-- React hooks for state management
-- Drag & drop with @dnd-kit
+---
 
 ## License
 
-GPL-3.0 - See LICENSE file for details
+GPL-3.0 — see the [LICENSE](LICENSE) file.
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Roadmap
-
-- [ ] Phase 2 features (text, audio, transitions, filters)
-- [ ] Project save/load UI
-- [ ] Video thumbnails on timeline
-- [ ] Keyboard shortcuts
-- [ ] Undo/redo functionality
-- [ ] Multi-track audio
-- [ ] Video effects library
+Contributions are welcome. Open an issue or submit a pull request.
 
 ---
 
