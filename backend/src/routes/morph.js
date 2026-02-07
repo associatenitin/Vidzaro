@@ -143,7 +143,6 @@ const completedJobAssets = new Map();
 router.get('/progress/:jobId', async (req, res, next) => {
   const { jobId } = req.params;
   try {
-    // If we already processed this completion, return cached result
     if (completedJobAssets.has(jobId)) {
       return res.json(completedJobAssets.get(jobId));
     }
@@ -156,40 +155,43 @@ router.get('/progress/:jobId', async (req, res, next) => {
     }
     const data = await response.json();
 
-    // Check if newly completed
-    if (data.status === 'completed' && data.result?.output_path && !completedJobAssets.has(jobId)) {
-      const { output_path } = data.result;
-      console.log(`[MORPH] Job ${jobId} completed. Copying ${output_path}...`);
+    if (data.status === 'completed' && data.result?.output_path) {
+      console.log(`[MORPH] Job ${jobId} is COMPLETED. Ingesting result...`);
+      try {
+        const { output_path } = data.result;
+        const outFilename = generateUniqueFilename('morph.mp4');
+        const destPath = path.join(UPLOADS_DIR, outFilename);
 
-      const outFilename = generateUniqueFilename('morph.mp4');
-      const destPath = path.join(UPLOADS_DIR, outFilename);
+        console.log(`[MORPH] Copying from ${output_path} to ${destPath}`);
+        await fs.copyFile(output_path, destPath);
 
-      await fs.copyFile(output_path, destPath);
-      // Don't unlink yet if you want to be safe, but Python service will clean up temp or we can
-      // await fs.unlink(output_path).catch(() => {}); 
+        const info = await getVideoInfo(destPath);
+        const asset = {
+          id: uuidv4(),
+          filename: outFilename,
+          originalName: `morph-${Date.now()}.mp4`,
+          path: `/uploads/${outFilename}`,
+          size: (await fs.stat(destPath)).size,
+          type: 'video',
+          duration: info.duration || 0,
+          resolution: info.video ? { width: info.video.width, height: info.video.height } : { width: 0, height: 0 },
+          codec: info.video?.codec || 'unknown',
+          uploadedAt: new Date().toISOString(),
+        };
 
-      const info = await getVideoInfo(destPath);
-      const asset = {
-        id: uuidv4(),
-        filename: outFilename,
-        originalName: `morph-${Date.now()}.mp4`,
-        path: `/uploads/${outFilename}`,
-        size: (await fs.stat(destPath)).size,
-        type: 'video',
-        duration: info.duration || 0,
-        resolution: info.video ? { width: info.video.width, height: info.video.height } : { width: 0, height: 0 },
-        codec: info.video?.codec || 'unknown',
-        uploadedAt: new Date().toISOString(),
-      };
-
-      const finalData = { ...data, asset };
-      completedJobAssets.set(jobId, finalData);
-      return res.json(finalData);
+        const finalData = { ...data, asset };
+        completedJobAssets.set(jobId, finalData);
+        console.log(`[MORPH] Ingestion successful for ${jobId}`);
+        return res.json(finalData);
+      } catch (ingestError) {
+        console.error(`[MORPH] Ingestion failed for ${jobId}:`, ingestError);
+        return res.json({ ...data, error: 'Ingestion failed', detail: ingestError.message });
+      }
     }
 
     res.json(data);
   } catch (err) {
-    console.error(`[MORPH] Progress error for ${jobId}:`, err);
+    console.error(`[MORPH] Progress route error for ${jobId}:`, err);
     next(err);
   }
 });

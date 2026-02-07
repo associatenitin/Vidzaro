@@ -11,6 +11,7 @@ import subprocess
 import uuid
 import importlib
 import site
+import traceback
 from pathlib import Path
 
 # Fix for GFPGAN/BasicsSR: torchvision removed functional_tensor in newer versions
@@ -355,19 +356,25 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
         interval_frames = max(1, int(fps * 2))
         frame_indices = list(range(0, total_frames, interval_frames))[:20]
 
+        logger.info(f"Detecting faces for {video_path}...")
         face_app = get_face_app()
+        logger.info("Face app loaded.")
         raw_per_frame = []
         stored_frames = []
         keyframes_meta = []
 
         cap = cv2.VideoCapture(video_path)
         for idx in frame_indices:
+            logger.info(f"Reading frame {idx}...")
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
-            if not ret: continue
+            if not ret: 
+                logger.warning(f"Failed to read frame {idx}")
+                continue
             stored_frames.append(frame)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             faces = face_app.get(rgb)
+            logger.info(f"Found {len(faces)} faces in frame {idx}")
             frame_dets = []
             for f in faces:
                 bbox = f.bbox.astype(int).tolist()
@@ -381,8 +388,10 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
             keyframes_meta.append({"frameIndex": idx, "time": round(idx/fps, 2), "width": w, "height": h})
         cap.release()
 
+        logger.info("Assigning track IDs...")
         with_tracks, track_embeddings = assign_track_ids_embedding(raw_per_frame)
         
+        logger.info("Encoding keyframes...")
         keyframes = []
         for i, frame_dets in enumerate(with_tracks):
             kf = keyframes_meta[i]
@@ -391,6 +400,7 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
             kf["imageBase64"] = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
             keyframes.append(kf)
 
+        logger.info("Detection complete.")
         return {
             "fps": fps,
             "totalFrames": total_frames,
@@ -398,8 +408,7 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
             "trackEmbeddings": track_embeddings
         }
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error in detect_faces: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/swap")
