@@ -52,6 +52,23 @@ This downloads the detection model (buffalo_s) and inswapper_128.onnx. If the of
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+**To avoid CUDA DLL errors** (e.g. `cublasLt64_12.dll` missing), use CPU-only:
+
+```powershell
+# Windows PowerShell
+.\run-cpu.ps1
+```
+
+```cmd
+# Windows CMD
+run-cpu.bat
+```
+
+```bash
+# macOS/Linux
+USE_CPU=1 uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
 Or:
 
 ```bash

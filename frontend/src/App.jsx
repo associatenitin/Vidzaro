@@ -11,6 +11,7 @@ import SaveDialog from './components/Project/SaveDialog';
 import Recorder from './components/Recorder/Recorder';
 import ShareDialog from './components/Share/ShareDialog';
 import MorphWizard from './components/Morph/MorphWizard';
+import PreferencesDialog from './components/Preferences/PreferencesDialog';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
 
@@ -49,6 +50,7 @@ function App() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showRecorder, setShowRecorder] = useState(false);
   const [showMorphWizard, setShowMorphWizard] = useState(false);
+  const [showPreferences, setShowPreferences] = useState(false);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
   const [selectedClipId, setSelectedClipId] = useState(null); // Clip selected on timeline
@@ -256,6 +258,7 @@ function App() {
           hasSelection={!!selectedClipId}
           onStartRecording={() => setShowRecorder(true)}
           onVideoMorph={() => setShowMorphWizard(true)}
+          onOpenPreferences={() => setShowPreferences(true)}
           onExport={() => setShowExportPanel(true)}
           canExport={project.clips.length > 0}
           onKeyboardShortcuts={handleKeyboardShortcuts}
@@ -306,6 +309,7 @@ function App() {
             onRedo={redo}
             canUndo={canUndo}
             canRedo={canRedo}
+            onOpenPreferences={() => setShowPreferences(true)}
           />
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
             <VideoPlayer
@@ -380,6 +384,11 @@ function App() {
           onClose={() => setShareDialogAsset(null)}
         />
       )}
+
+      <PreferencesDialog
+        isOpen={showPreferences}
+        onClose={() => setShowPreferences(false)}
+      />
 
       {showMorphWizard && (
         <MorphWizard

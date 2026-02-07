@@ -9,29 +9,54 @@ import base64
 import tempfile
 import subprocess
 import uuid
+import importlib
+import site
 from pathlib import Path
 
 # Add NVIDIA CUDA pip package paths to PATH so onnxruntime-gpu finds cublasLt64_12.dll etc.
 # (avoids needing the full CUDA Toolkit when using nvidia-cublas-cu12 / nvidia-cudnn-cu12 from pip)
 def _add_nvidia_cuda_paths():
     paths_to_add = []
-    # Try both naming conventions (nvidia_cublas_cu12 or nvidia.cublas_cu12)
-    for pkg_name in ("nvidia_cublas_cu12", "nvidia_cudnn_cu12", "nvidia.cublas_cu12", "nvidia.cudnn_cu12"):
+    # 1. Try explicit imports for well-known packages
+    for pkg_name in ("nvidia.cublas", "nvidia.cudnn", "nvidia.cufft", "nvidia.curand", "nvidia.cusolver", "nvidia.cusparse"):
         try:
-            mod = __import__(pkg_name)
+            mod = importlib.import_module(pkg_name)
             if hasattr(mod, "__path__"):
                 pkg_dir = Path(mod.__path__[0]).resolve()
-            else:
-                pkg_dir = Path(mod.__file__).resolve().parent
-            for sub in ("bin", "lib", ""):
-                d = pkg_dir / sub if sub else pkg_dir
-                if d.is_dir():
-                    paths_to_add.append(str(d))
-                    break
+                for sub in ("bin", "lib"):
+                    d = pkg_dir / sub
+                    if d.is_dir():
+                        paths_to_add.append(str(d))
         except Exception:
             pass
+
+    # 2. Also scan site-packages/nvidia directory directly (more robust for nested names)
+    try:
+        for sp in site.getsitepackages():
+            nvidia_dir = Path(sp) / "nvidia"
+            if nvidia_dir.is_dir():
+                for sub_dir in nvidia_dir.iterdir():
+                    if sub_dir.is_dir():
+                        for sub in ("bin", "lib"):
+                            d = sub_dir / sub
+                            if d.is_dir():
+                                paths_to_add.append(str(d))
+    except Exception:
+        pass
+
+    # Deduplicate
+    paths_to_add = list(dict.fromkeys(paths_to_add))
+    
     if paths_to_add:
+        print(f"Adding CUDA paths to PATH/DLL search: {paths_to_add}")
         os.environ["PATH"] = os.pathsep.join(paths_to_add) + os.pathsep + os.environ.get("PATH", "")
+        # For Python 3.8+ on Windows, we also need os.add_dll_directory
+        if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+            for p in paths_to_add:
+                try:
+                    os.add_dll_directory(p)
+                except Exception:
+                    pass
 
 
 _add_nvidia_cuda_paths()
@@ -130,10 +155,19 @@ def iou_box(a, b):
     return inter / (area_a + area_b - inter + 1e-6)
 
 
+def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity; assumes embeddings may be unnormalized."""
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na < 1e-8 or nb < 1e-8:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb + 1e-8))
+
+
 def assign_track_ids(detections_per_frame, iou_thresh=0.3):
     """
     detections_per_frame: list of list of dicts with 'bbox' [x1,y1,x2,y2].
     Returns same structure with 'trackId' added (0, 1, 2, ...).
+    IoU-based; use assign_track_ids_embedding when embeddings are available.
     """
     next_id = 0
     track_bbox = {}  # trackId -> last bbox
@@ -158,6 +192,68 @@ def assign_track_ids(detections_per_frame, iou_thresh=0.3):
             new_frame.append({**det, "trackId": best_id})
         out.append(new_frame)
     return out
+
+
+def assign_track_ids_embedding(detections_per_frame, sim_thresh=0.28):
+    """
+    Assign track IDs by face embedding similarity across keyframes.
+    detections_per_frame: list of list of dicts with 'bbox' and 'embedding' (numpy array).
+    Same person across frames (different poses/positions) gets the same trackId.
+    Falls back to IoU when embedding is missing.
+    
+    Uses lower threshold (0.28) and stores multiple embeddings per track to handle
+    significant pose changes (e.g., dancing, turning head).
+    """
+    next_id = 0
+    track_embeddings = {}  # trackId -> list of embeddings (up to 5 per person)
+    track_bbox = {}  # trackId -> last bbox (for IoU fallback)
+    MAX_EMBEDDINGS_PER_TRACK = 5
+    out = []
+    for frame_dets in detections_per_frame:
+        new_frame = []
+        for det in frame_dets:
+            bbox = det.get("bbox")
+            if not bbox or len(bbox) != 4:
+                continue
+            emb = det.get("embedding")
+            best_id = None
+            best_score = sim_thresh
+            if emb is not None and isinstance(emb, np.ndarray):
+                # Compare against ALL stored embeddings for each track
+                for tid, emb_list in track_embeddings.items():
+                    for prev_emb in emb_list:
+                        sim = _cosine_sim(emb, prev_emb)
+                        if sim > best_score:
+                            best_score = sim
+                            best_id = tid
+            if best_id is None and track_bbox:
+                best_iou = 0.3
+                for tid, prev_bbox in track_bbox.items():
+                    iou = iou_box(bbox, prev_bbox)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_id = tid
+            if best_id is None:
+                best_id = next_id
+                next_id += 1
+            # Store embedding (keep up to MAX_EMBEDDINGS_PER_TRACK diverse embeddings)
+            if emb is not None and isinstance(emb, np.ndarray):
+                if best_id not in track_embeddings:
+                    track_embeddings[best_id] = []
+                # Only add if somewhat different from existing (avoid duplicates)
+                should_add = True
+                for existing_emb in track_embeddings[best_id]:
+                    if _cosine_sim(emb, existing_emb) > 0.85:
+                        should_add = False
+                        break
+                if should_add and len(track_embeddings[best_id]) < MAX_EMBEDDINGS_PER_TRACK:
+                    track_embeddings[best_id].append(emb)
+            track_bbox[best_id] = bbox
+            out_det = {k: v for k, v in det.items() if k != "embedding"}
+            new_frame.append({**out_det, "trackId": best_id})
+        out.append(new_frame)
+    return out
+
 
 
 app = FastAPI(title="Video Morph Service")
@@ -217,19 +313,24 @@ def detect_faces(req: DetectFacesRequest = Body(...)):
         frame_dets = []
         for f in faces:
             bbox = f.bbox.astype(int).tolist()
-            frame_dets.append({"bbox": bbox})
+            emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
+            det = {"bbox": bbox}
+            if emb is not None:
+                det["embedding"] = np.asarray(emb, dtype=np.float32)
+            frame_dets.append(det)
         raw_per_frame.append(frame_dets)
         time_sec = round(idx / fps, 2)
         h, w = frame.shape[:2]
         keyframes.append({"frameIndex": idx, "time": time_sec, "width": w, "height": h, "faces": []})
     cap.release()
 
-    with_tracks = assign_track_ids(raw_per_frame)
+    with_tracks = assign_track_ids_embedding(raw_per_frame)
     for i, frame_dets in enumerate(with_tracks):
         if i < len(keyframes):
             keyframes[i]["faces"] = [{"bbox": d["bbox"], "trackId": d["trackId"]} for d in frame_dets]
             if i < len(stored_frames):
-                _, buf = cv2.imencode(".png", cv2.cvtColor(stored_frames[i], cv2.COLOR_BGR2RGB))
+                # imencode expects BGR format, stored_frames are already BGR
+                _, buf = cv2.imencode(".png", stored_frames[i])
                 keyframes[i]["imageBase64"] = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
 
     return {
@@ -272,7 +373,10 @@ def swap(req: SwapRequest = Body(...)):
     out_video_path = Path(TEMP_DIR) / f"morph_out_{out_id}.mp4"
 
     try:
-        track_bbox = {}
+        track_embeddings = {}  # trackId -> list of embeddings (up to 5 per person)
+        track_bbox = {}  # trackId -> last bbox (for IoU fallback)
+        MAX_EMBEDDINGS_PER_TRACK = 5
+        SIM_THRESH = 0.28  # Lower threshold for pose variations
         frame_idx = 0
         while True:
             ret, frame = cap.read()
@@ -280,21 +384,51 @@ def swap(req: SwapRequest = Body(...)):
                 break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             faces = face_app.get(rgb)
-            # Assign track id by IoU with previous bboxes (same logic as detect-faces)
-            frame_dets = [{"face": f, "bbox": f.bbox.astype(int).tolist()} for f in faces]
-            next_id = max(track_bbox.keys(), default=-1) + 1
+            # Assign track id by embedding similarity (same logic as detect-faces)
+            frame_dets = []
+            for f in faces:
+                bbox = f.bbox.astype(int).tolist()
+                emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
+                det = {"face": f, "bbox": bbox}
+                if emb is not None:
+                    det["embedding"] = np.asarray(emb, dtype=np.float32)
+                frame_dets.append(det)
+            next_id = max(list(track_embeddings.keys()) + list(track_bbox.keys()), default=-1) + 1
             for det in frame_dets:
                 bbox = det["bbox"]
+                emb = det.get("embedding")
                 best_id = None
-                best_iou = 0.3
-                for tid, prev_bbox in track_bbox.items():
-                    iou = iou_box(bbox, prev_bbox)
-                    if iou > best_iou:
-                        best_iou = iou
-                        best_id = tid
+                best_score = SIM_THRESH
+                # First try embedding matching against ALL stored embeddings
+                if emb is not None:
+                    for tid, emb_list in track_embeddings.items():
+                        for prev_emb in emb_list:
+                            sim = _cosine_sim(emb, prev_emb)
+                            if sim > best_score:
+                                best_score = sim
+                                best_id = tid
+                # Fallback to IoU if no embedding match
+                if best_id is None and track_bbox:
+                    best_iou = 0.3
+                    for tid, prev_bbox in track_bbox.items():
+                        iou = iou_box(bbox, prev_bbox)
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_id = tid
                 if best_id is None:
                     best_id = next_id
                     next_id += 1
+                # Store embedding (keep up to MAX_EMBEDDINGS_PER_TRACK diverse embeddings)
+                if emb is not None:
+                    if best_id not in track_embeddings:
+                        track_embeddings[best_id] = []
+                    should_add = True
+                    for existing_emb in track_embeddings[best_id]:
+                        if _cosine_sim(emb, existing_emb) > 0.85:
+                            should_add = False
+                            break
+                    if should_add and len(track_embeddings[best_id]) < MAX_EMBEDDINGS_PER_TRACK:
+                        track_embeddings[best_id].append(emb)
                 track_bbox[best_id] = bbox
                 det["trackId"] = best_id
             chosen_face = None
@@ -303,11 +437,15 @@ def swap(req: SwapRequest = Body(...)):
                     chosen_face = det["face"]
                     break
             if chosen_face is not None:
-                frame = swapper.get(frame, chosen_face, source_face, paste_back=True)
+                # swapper.get expects the frame in the same format as face detection (RGB)
+                # Perform swap on RGB, then convert back to BGR for saving
+                rgb = swapper.get(rgb, chosen_face, source_face, paste_back=True)
+                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             frame_path = frames_dir / f"frame_{frame_idx:08d}.png"
             cv2.imwrite(str(frame_path), frame)
             frame_idx += 1
         cap.release()
+
 
         # Encode video with ffmpeg
         ffmpeg_cmd = [
