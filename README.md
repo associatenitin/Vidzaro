@@ -38,6 +38,12 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 - **Output** — MP4, WebM, or MKV; 720p / 1080p / 4K; 15–60 fps; configurable bitrate
 - **Preview & trim** — After recording, preview and optionally trim before adding to the project
 
+### Video Morph (face swap)
+
+- **Face swap** — Replace a person's face in a video with a face from a photo. **Tools → Video Morph...** then: pick a source photo, pick a video, detect characters, select which person to replace, and apply. The result is added to the library and timeline.
+- **Character selection** — Keyframes with face boxes and labels (Person 1, Person 2, …); click to choose who gets the new face.
+- **CPU / GPU preference** — Toolbar **Preferences** (gear icon): toggle **Video Morph: Use GPU (CUDA)**. When off, the morph service uses CPU only (slower; avoids CUDA DLL errors if the toolkit isn't installed). Stored in the browser and sent with each morph request.
+
 ### Export & share
 
 - **Export** — Render timeline to video with resolution (1080p, 720p, 480p) and quality (High, Medium, Low); progress indicator and download when done
@@ -45,7 +51,8 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 
 ### Interface
 
-- **Menu bar** — File (New, Open, Save, Save As), Edit (Undo, Redo, Delete, Deselect), View (Reset timeline height), Record (Start Recording), Export (Export Video), Help (Keyboard Shortcuts, About)
+- **Menu bar** — File (New, Open, Save, Save As), Edit (Undo, Redo, Delete, Deselect), View (Reset timeline height), Record (Start Recording), **Tools** (Video Morph), Export (Export Video), Help (Keyboard Shortcuts, About)
+- **Toolbar** — Play/Pause, time, undo/redo, tools (Select, Ripple), **Preferences** (gear: Video Morph CPU/GPU toggle), Split
 - **Keyboard shortcuts** — Playback (Space), Undo/Redo (Ctrl+Z / Ctrl+Shift+Z), tools (V, B, S), seek (←/→, Shift+←/→, Home), delete clip (Del), deselect (Esc), file (Ctrl+N, Ctrl+O, Ctrl+S)
 - **Media library** — Upload videos (MP4, WebM, MOV, AVI, etc.); thumbnails and waveforms; filter by type; add to timeline by drag or “Add to track”; rename, remove, share
 - **Resizable timeline** — Drag the divider to resize the timeline panel
@@ -68,6 +75,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 
 - **Node.js** 18+ and npm
 - **FFmpeg** installed and on your PATH
+- **Video Morph (optional):** Python 3.10+ and the morph service (see [Video Morph setup](#video-morph-setup)). For GPU acceleration: NVIDIA driver + **CUDA 12** Toolkit with its `bin` folder on PATH (e.g. `cublasLt64_12.dll`). Without CUDA 12, use the toolbar preference to run morph on CPU.
 
 ### Installing FFmpeg
 
@@ -143,6 +151,20 @@ npm install
 
 3. Open **http://localhost:3000** in your browser.
 
+4. **Video Morph (optional):** Start the morph service so face detection and face swap work:
+
+   ```bash
+   cd morph-service
+   python -m venv .venv
+   .venv\Scripts\activate    # Windows
+   # source .venv/bin/activate   # macOS/Linux
+   pip install -r requirements.txt
+   python download_models.py     # once: downloads models (~1 GB)
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+
+   Keep this running (or set `MORPH_SERVICE_URL` if the service is elsewhere). See [morph-service/README.md](morph-service/README.md) for CUDA/CPU and model options.
+
 ### Production
 
 1. Build the frontend:
@@ -167,7 +189,7 @@ npm install
 Vidzaro/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/       # upload, video, export, projects, recordings, shares
+│   │   ├── routes/       # upload, video, export, projects, recordings, shares, morph
 │   │   ├── services/     # FFmpeg, project, share
 │   │   ├── utils/        # errorHandler, fileHandler, validation
 │   │   └── server.js
@@ -175,18 +197,24 @@ Vidzaro/
 │   ├── projects/         # Saved project JSON (if saved to server)
 │   ├── exports/          # Exported videos
 │   └── thumbnails/       # Generated thumbnails
+├── morph-service/        # Optional: Python face detection & face swap (InsightFace)
+│   ├── main.py           # FastAPI: /detect-faces, /swap
+│   ├── requirements.txt
+│   ├── download_models.py
+│   └── README.md
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Export/   # Export panel
 │   │   │   ├── Library/  # Media library
-│   │   │   ├── MenuBar/  # App menu (File, Edit, View, Record, Export, Help)
+│   │   │   ├── MenuBar/  # File, Edit, View, Record, Tools, Export, Help
+│   │   │   ├── Morph/    # MorphWizard, CharacterSelect
 │   │   │   ├── Preview/  # Video player
 │   │   │   ├── Project/  # FileDialog, SaveDialog
 │   │   │   ├── Recorder/ # Recorder, RecorderOverlay, RegionSelector
 │   │   │   ├── Share/    # Share dialog
 │   │   │   ├── Timeline/ # Timeline, Clip
-│   │   │   ├── Toolbar/  # Play, time, undo/redo, tools, split
+│   │   │   ├── Toolbar/  # Play, time, undo/redo, tools, preferences, split
 │   │   │   └── Upload/   # Upload area
 │   │   ├── hooks/        # useProject, useVideo, useRecording*
 │   │   ├── services/     # api.js
@@ -207,6 +235,7 @@ Vidzaro/
 | **Export** | `POST /api/export`, `GET /api/export/:jobId/status`, `GET /api/export/:jobId/download` |
 | **Projects** | `GET /api/projects`, `GET /api/projects/:id`, `POST /api/projects`, `POST /api/projects/load-from-content`, `DELETE /api/projects/:id` |
 | **Recordings** | `POST /api/recordings/finalize` (upload WebM, optional trim/convert) |
+| **Morph** | `POST /api/morph/detect-faces`, `POST /api/morph/run` (face detection & swap; requires morph-service) |
 | **Shares**  | `POST /api/shares`, `GET /api/shares/:id` |
 | **Health** | `GET /api/health` |
 
@@ -221,6 +250,7 @@ Vidzaro/
 5. **Save** — **File → Save** (or Ctrl+S) to save the project as JSON.
 6. **Export** — **Export → Export Video...** to render and download the final video.
 7. **Share** — Use the share action on a library asset to create a shareable link.
+8. **Video Morph** — **Tools → Video Morph...** to replace a person’s face in a video with a face from a photo (requires the morph-service running). Use the toolbar **Preferences** (gear) to switch between GPU (CUDA) and CPU.
 
 ---
 
@@ -253,6 +283,44 @@ Full list is available in the app under **Help → Keyboard Shortcuts**.
 - **Backend:** ES modules; `npm run dev` uses `node --watch`.
 - **Frontend:** Vite with HMR; Tailwind for styles; no TypeScript.
 - **Proxy:** Frontend dev server proxies `/api` to `http://localhost:3001`.
+- **Morph:** Backend calls morph-service at `MORPH_SERVICE_URL` (default `http://localhost:8000`). Set env var to point to another host/port if needed.
+
+---
+
+## Video Morph setup
+
+Video Morph (face swap) uses a separate Python service. Full details: [morph-service/README.md](morph-service/README.md).
+
+**Quick setup:**
+
+1. **Python 3.10+** and **FFmpeg** on PATH (same as main app).
+2. From repo root: `cd morph-service`, create a venv, `pip install -r requirements.txt`, then `python download_models.py` (downloads ~1 GB of models; uses Hugging Face if the default URL fails).
+3. Run the service: `uvicorn main:app --host 0.0.0.0 --port 8000`.
+4. In the app, use **Tools → Video Morph...** and, if you like, **Preferences** (toolbar gear) to choose **Video Morph: Use GPU (CUDA)** or CPU only.
+
+**GPU (CUDA):** For GPU acceleration you need an **NVIDIA driver** (check with `nvidia-smi`). You do **not** need to install the full CUDA Toolkit if you use the built-in pip option:
+
+- **Option A — CUDA via pip (recommended):** The morph service already depends on `nvidia-cublas-cu12` and `nvidia-cudnn-cu12`. When you `pip install -r requirements.txt` in the morph-service venv, these install the CUDA 12 runtime DLLs; the service adds them to `PATH` at startup. No system PATH or Toolkit install needed.
+- **Option B — Full CUDA 12 Toolkit:** If Option A does not work, download from [NVIDIA CUDA 12 archive](https://developer.nvidia.com/cuda-12-4-0-download-archive) (Windows → x86_64 → exe), install it, then add the toolkit **bin** folder to your system PATH (see below).
+
+**Adding CUDA to PATH (Windows):**
+
+1. Note your CUDA install path, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4`. The folder to add is **`bin`** inside it: `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin`.
+2. Press **Win + R**, type `sysdm.cpl`, press Enter.
+3. Open the **Advanced** tab, then **Environment Variables**.
+4. Under **System variables** (or **User variables**), select **Path**, then **Edit**.
+5. Click **New** and paste the `bin` path (e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin`). Use your actual version number if different from `v12.4`.
+6. Click **OK** on all dialogs. Close and reopen any terminal (and Cursor) so the new PATH is picked up.
+
+Alternatively, in **PowerShell** (adds to your user PATH):
+
+```powershell
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin", "User")
+```
+
+Replace `v12.4` with your installed version (e.g. `v12.6`). Then close and reopen the terminal.
+
+If the toolkit isn’t installed or PATH isn’t set, turn off **Video Morph: Use GPU (CUDA)** in Preferences to use CPU and avoid DLL errors.
 
 ---
 

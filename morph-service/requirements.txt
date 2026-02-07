@@ -1,0 +1,20 @@
+# Video Morph service - Face detection and swap
+# Python 3.10+
+
+# InsightFace: detection + inswapper (use onnxruntime-gpu if you have CUDA)
+insightface>=0.7.0
+onnxruntime-gpu>=1.16.0; sys_platform != "linux" or platform_machine == "x86_64"
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# CUDA 12 libs via pip (no full CUDA Toolkit install needed); onnxruntime-gpu finds DLLs from these
+nvidia-cublas-cu12>=12.4.0
+nvidia-cudnn-cu12>=9.0.0
+
+# API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Optional: CPU-only fallback (install instead of onnxruntime-gpu if no GPU)
+# onnxruntime>=1.16.0

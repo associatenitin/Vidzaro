@@ -132,4 +132,16 @@ export function getShareUrl(shareId) {
   return `${base}/api/shares/${shareId}`;
 }
 
+// Video Morph: detect faces in video (videoId = asset.filename; useCuda = prefer GPU)
+export async function morphDetectFaces(videoId, useCuda = true) {
+  const res = await api.post('/morph/detect-faces', { videoId, useCuda });
+  return res.data;
+}
+
+// Video Morph: run face swap (photoId, videoId = asset.filename; faceTrackId = selected character; useCuda = prefer GPU)
+export async function morphRun(photoId, videoId, faceTrackId = 0, useCuda = true) {
+  const res = await api.post('/morph/run', { photoId, videoId, faceTrackId, useCuda });
+  return res.data;
+}
+
 export default api;

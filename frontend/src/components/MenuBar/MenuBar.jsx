@@ -67,6 +67,7 @@ export default function MenuBar({
   onStartRecording,
   onExport,
   canExport,
+  onVideoMorph,
   onKeyboardShortcuts,
   onAbout,
   onResetTimelineHeight,
@@ -106,6 +107,12 @@ export default function MenuBar({
       <Menu label="Record" open={openMenu === 'Record'} onOpen={setOpenMenu} onClose={closeMenu}>
         <div className="px-2 py-1">
           <MenuItem label="Start Recording" onClick={() => { onStartRecording?.(); closeMenu(); }} />
+        </div>
+      </Menu>
+
+      <Menu label="Tools" open={openMenu === 'Tools'} onOpen={setOpenMenu} onClose={closeMenu}>
+        <div className="px-2 py-1">
+          <MenuItem label="Video Morph..." onClick={() => { onVideoMorph?.(); closeMenu(); }} />
         </div>
       </Menu>
 

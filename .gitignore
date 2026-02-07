@@ -145,3 +145,8 @@ frontend/dist/
 frontend/node_modules/
 backend/node_modules/
 backend/thumbnails
+
+# Morph service (Python)
+morph-service/.venv/
+morph-service/models/
+morph-service/__pycache__/
