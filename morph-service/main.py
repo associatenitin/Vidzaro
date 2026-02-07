@@ -13,6 +13,36 @@ import importlib
 import site
 from pathlib import Path
 
+# Fix for GFPGAN/BasicsSR: torchvision removed functional_tensor in newer versions
+from types import ModuleType
+try:
+    import torchvision.transforms.functional as F
+    import torchvision.transforms as T
+    # Create the missing module in memory
+    mock_module = ModuleType('torchvision.transforms.functional_tensor')
+    for attr in dir(F):
+        if not attr.startswith('__'):
+            setattr(mock_module, attr, getattr(F, attr))
+    sys.modules['torchvision.transforms.functional_tensor'] = mock_module
+    T.functional_tensor = mock_module
+except Exception as e:
+    print(f"Warning: Failed to patch torchvision: {e}")
+
+import logging
+from fastapi import BackgroundTasks
+
+# Configure logging
+morph_log_file = Path(__file__).parent / "morph_service.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(morph_log_file),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # Add NVIDIA CUDA pip package paths to PATH so onnxruntime-gpu finds cublasLt64_12.dll etc.
 # (avoids needing the full CUDA Toolkit when using nvidia-cublas-cu12 / nvidia-cudnn-cu12 from pip)
 def _add_nvidia_cuda_paths():
@@ -66,6 +96,15 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 
+app = FastAPI(title="Video Morph Service")
+
+def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity; assumes embeddings may be unnormalized."""
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na < 1e-8 or nb < 1e-8:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb + 1e-8))
+
 # InsightFace expects root such that models live in root/models/ (e.g. root/models/buffalo_sc/)
 MORPH_ROOT = Path(__file__).resolve().parent
 MODELS_ROOT = os.environ.get("MODELS_ROOT", str(MORPH_ROOT))
@@ -76,6 +115,7 @@ Path(TEMP_DIR).mkdir(parents=True, exist_ok=True)
 # Lazy-load heavy deps
 _face_app = None
 _swapper = None
+_enhancer = None
 # Override from request: None = use env; True = CPU only; False = prefer CUDA
 _prefer_cpu_override: bool | None = None
 
@@ -100,18 +140,22 @@ def _apply_use_cuda(use_cuda: bool | None):
         _prefer_cpu_override = new_prefer_cpu
         _face_app = None
         _swapper = None
+        _enhancer = None
 
 
 def get_face_app():
     global _face_app
     if _face_app is None:
         try:
+            print("Loading FaceAnalysis model...")
             import insightface
             from insightface.app import FaceAnalysis
             model = os.environ.get("INSIGHTFACE_MODEL", "buffalo_s")
             _face_app = FaceAnalysis(name=model, root=MODELS_ROOT, providers=_get_providers())
             _face_app.prepare(ctx_id=0, det_size=(640, 640))
+            print("FaceAnalysis loaded successfully.")
         except Exception as e:
+            print(f"Failed to load FaceAnalysis: {e}")
             raise RuntimeError(f"Failed to load FaceAnalysis: {e}") from e
     return _face_app
 
@@ -120,23 +164,60 @@ def get_swapper():
     global _swapper
     if _swapper is None:
         try:
+            print("Loading InSwapper model...")
             from insightface.model_zoo import get_model
             prov = _get_providers()
             _swapper = get_model("inswapper_128.onnx", root=MODELS_ROOT, download=True, providers=prov)
+            print("InSwapper loaded successfully.")
         except RuntimeError as e:
             if "Failed downloading" in str(e):
                 local_path = Path(MODELS_ROOT) / "models" / "inswapper_128.onnx"
                 if local_path.exists():
+                    print(f"Found local swapper model at {local_path}")
                     _swapper = get_model(str(local_path), root=MODELS_ROOT, download=False, providers=_get_providers())
                 else:
+                    print("InSwapper model not found locally and download failed.")
                     raise RuntimeError(
                         "InSwapper download failed. Run: python download_models.py (uses Hugging Face fallback)"
                     ) from e
             else:
+                print(f"RuntimeError loading InSwapper: {e}")
                 raise
         except Exception as e:
+            print(f"Failed to load InSwapper: {e}")
             raise RuntimeError(f"Failed to load InSwapper: {e}") from e
     return _swapper
+
+
+def get_enhancer():
+    global _enhancer
+    if _enhancer is None:
+        try:
+            print("Loading GFPGAN enhancer...")
+            from gfpgan import GFPGANer
+            import torch
+            
+            device = torch.device('cuda' if torch.cuda.is_available() and _prefer_cpu_override is not True else 'cpu')
+            print(f"GFPGAN using device: {device}")
+            
+            model_url = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth'
+            _enhancer = GFPGANer(
+                model_path=model_url,
+                upscale=1,
+                arch='clean',
+                channel_multiplier=2,
+                bg_upsampler=None,
+                device=device
+            )
+            print("GFPGAN enhancer loaded successfully.")
+        except Exception as e:
+            print(f"Failed to load GFPGAN: {e}")
+            # Non-fatal, mark as 'failed' so we don't try every 10 frames
+            _enhancer = "failed"
+            return None
+    if _enhancer == "failed":
+        return None
+    return _enhancer
 
 
 def iou_box(a, b):
@@ -155,92 +236,69 @@ def iou_box(a, b):
     return inter / (area_a + area_b - inter + 1e-6)
 
 
-def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity; assumes embeddings may be unnormalized."""
-    na, nb = np.linalg.norm(a), np.linalg.norm(b)
-    if na < 1e-8 or nb < 1e-8:
-        return 0.0
-    return float(np.dot(a, b) / (na * nb + 1e-8))
+# Global state for tracking job progress
+_jobs = {}
 
+def update_job_progress(job_id: str, progress: float, status: str = "processing", result: dict = None):
+    _jobs[job_id] = {
+        "progress": round(progress, 2),
+        "status": status,
+        "result": result,
+        "updated_at": os.times()[4]
+    }
 
-def assign_track_ids(detections_per_frame, iou_thresh=0.3):
-    """
-    detections_per_frame: list of list of dicts with 'bbox' [x1,y1,x2,y2].
-    Returns same structure with 'trackId' added (0, 1, 2, ...).
-    IoU-based; use assign_track_ids_embedding when embeddings are available.
-    """
-    next_id = 0
-    track_bbox = {}  # trackId -> last bbox
-    out = []
-    for frame_dets in detections_per_frame:
-        new_frame = []
-        for det in frame_dets:
-            bbox = det.get("bbox")
-            if not bbox or len(bbox) != 4:
-                continue
-            best_id = None
-            best_iou = iou_thresh
-            for tid, prev_bbox in track_bbox.items():
-                iou = iou_box(bbox, prev_bbox)
-                if iou > best_iou:
-                    best_iou = iou
-                    best_id = tid
-            if best_id is None:
-                best_id = next_id
-                next_id += 1
-            track_bbox[best_id] = bbox
-            new_frame.append({**det, "trackId": best_id})
-        out.append(new_frame)
-    return out
-
-
-def assign_track_ids_embedding(detections_per_frame, sim_thresh=0.28):
+def assign_track_ids_embedding(detections_per_frame, sim_thresh=0.42):
     """
     Assign track IDs by face embedding similarity across keyframes.
-    detections_per_frame: list of list of dicts with 'bbox' and 'embedding' (numpy array).
-    Same person across frames (different poses/positions) gets the same trackId.
-    Falls back to IoU when embedding is missing.
-    
-    Uses lower threshold (0.28) and stores multiple embeddings per track to handle
-    significant pose changes (e.g., dancing, turning head).
+    Ensures that each ID is used at most once per frame.
     """
     next_id = 0
-    track_embeddings = {}  # trackId -> list of embeddings (up to 5 per person)
-    track_bbox = {}  # trackId -> last bbox (for IoU fallback)
+    track_embeddings = {}  # trackId -> list of embeddings
+    track_bbox = {}  # trackId -> last bbox
     MAX_EMBEDDINGS_PER_TRACK = 5
     out = []
+    
     for frame_dets in detections_per_frame:
         new_frame = []
-        for det in frame_dets:
+        used_ids_in_this_frame = set()
+        
+        # Sort detections by size or presence of embedding to prioritize better matches
+        sorted_dets = sorted(frame_dets, key=lambda d: d.get("embedding") is not None, reverse=True)
+        
+        for det in sorted_dets:
             bbox = det.get("bbox")
-            if not bbox or len(bbox) != 4:
-                continue
+            if not bbox or len(bbox) != 4: continue
             emb = det.get("embedding")
             best_id = None
             best_score = sim_thresh
-            if emb is not None and isinstance(emb, np.ndarray):
-                # Compare against ALL stored embeddings for each track
+
+            if emb is not None:
                 for tid, emb_list in track_embeddings.items():
+                    if tid in used_ids_in_this_frame: continue
                     for prev_emb in emb_list:
                         sim = _cosine_sim(emb, prev_emb)
                         if sim > best_score:
                             best_score = sim
                             best_id = tid
+            
+            # IoU fallback (only if no embedding match was found)
             if best_id is None and track_bbox:
-                best_iou = 0.3
+                best_iou = 0.35
                 for tid, prev_bbox in track_bbox.items():
+                    if tid in used_ids_in_this_frame: continue
                     iou = iou_box(bbox, prev_bbox)
                     if iou > best_iou:
                         best_iou = iou
                         best_id = tid
+            
             if best_id is None:
                 best_id = next_id
                 next_id += 1
-            # Store embedding (keep up to MAX_EMBEDDINGS_PER_TRACK diverse embeddings)
-            if emb is not None and isinstance(emb, np.ndarray):
-                if best_id not in track_embeddings:
-                    track_embeddings[best_id] = []
-                # Only add if somewhat different from existing (avoid duplicates)
+            
+            used_ids_in_this_frame.add(best_id)
+            
+            if emb is not None:
+                if best_id not in track_embeddings: track_embeddings[best_id] = []
                 should_add = True
                 for existing_emb in track_embeddings[best_id]:
                     if _cosine_sim(emb, existing_emb) > 0.85:
@@ -248,223 +306,218 @@ def assign_track_ids_embedding(detections_per_frame, sim_thresh=0.28):
                         break
                 if should_add and len(track_embeddings[best_id]) < MAX_EMBEDDINGS_PER_TRACK:
                     track_embeddings[best_id].append(emb)
+            
             track_bbox[best_id] = bbox
             out_det = {k: v for k, v in det.items() if k != "embedding"}
             new_frame.append({**out_det, "trackId": best_id})
         out.append(new_frame)
-    return out
-
-
-
-app = FastAPI(title="Video Morph Service")
+    
+    repr_embeddings = {tid: embs[0].tolist() for tid, embs in track_embeddings.items() if embs}
+    return out, repr_embeddings
 
 
 class DetectFacesRequest(BaseModel):
     video_path: str
-    use_cuda: bool | None = None  # None = use env/default; True = prefer GPU; False = CPU only
-
+    use_cuda: bool | None = None
 
 class SwapRequest(BaseModel):
     source_image_path: str
     video_path: str
     target_face_track_id: int = 0
+    target_face_embedding: list[float] | None = None # Stable ID bootstrap
+    job_id: str | None = None
     use_cuda: bool | None = None
-
+    enhance: bool = True
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+@app.get("/progress/{job_id}")
+def get_progress(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 @app.post("/detect-faces")
 def detect_faces(req: DetectFacesRequest = Body(...)):
-    """Extract sample frames from video, detect faces, return frames with bboxes and track ids."""
-    _apply_use_cuda(req.use_cuda)
-    video_path = req.video_path
-    if not os.path.isfile(video_path):
-        raise HTTPException(status_code=400, detail="Video file not found")
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise HTTPException(status_code=400, detail="Could not open video")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-
-    # Sample ~every 2 seconds, max 15 frames
-    interval_frames = max(1, int(fps * 2))
-    frame_indices = list(range(0, total_frames, interval_frames))[:15]
-
-    face_app = get_face_app()
-    detections_per_frame = []
-    keyframes = []  # list of { frameIndex, time, imageBase64? or image not for now, faces: [{ bbox, trackId }] }
-    # We'll get bboxes first, then assign track ids
-    raw_per_frame = []
-
-    stored_frames = []
-    cap = cv2.VideoCapture(video_path)
-    for idx in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        stored_frames.append(frame)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        faces = face_app.get(rgb)
-        frame_dets = []
-        for f in faces:
-            bbox = f.bbox.astype(int).tolist()
-            emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
-            det = {"bbox": bbox}
-            if emb is not None:
-                det["embedding"] = np.asarray(emb, dtype=np.float32)
-            frame_dets.append(det)
-        raw_per_frame.append(frame_dets)
-        time_sec = round(idx / fps, 2)
-        h, w = frame.shape[:2]
-        keyframes.append({"frameIndex": idx, "time": time_sec, "width": w, "height": h, "faces": []})
-    cap.release()
-
-    with_tracks = assign_track_ids_embedding(raw_per_frame)
-    for i, frame_dets in enumerate(with_tracks):
-        if i < len(keyframes):
-            keyframes[i]["faces"] = [{"bbox": d["bbox"], "trackId": d["trackId"]} for d in frame_dets]
-            if i < len(stored_frames):
-                # imencode expects BGR format, stored_frames are already BGR
-                _, buf = cv2.imencode(".png", stored_frames[i])
-                keyframes[i]["imageBase64"] = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
-
-    return {
-        "fps": fps,
-        "totalFrames": total_frames,
-        "keyframes": keyframes,
-    }
-
-
-@app.post("/swap")
-def swap(req: SwapRequest = Body(...)):
-    """Face swap: source face from image onto the person with target_face_track_id in the video."""
-    _apply_use_cuda(req.use_cuda)
-    src_path = req.source_image_path
-    video_path = req.video_path
-    target_track_id = req.target_face_track_id
-
-    for p in (src_path, video_path):
-        if not os.path.isfile(p):
-            raise HTTPException(status_code=400, detail=f"File not found: {p}")
-
-    face_app = get_face_app()
-    swapper = get_swapper()
-
-    # Load source face from image
-    src_img = cv2.imread(src_path)
-    if src_img is None:
-        raise HTTPException(status_code=400, detail="Could not read source image")
-    src_rgb = cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB)
-    src_faces = face_app.get(src_rgb)
-    if not src_faces:
-        raise HTTPException(status_code=400, detail="No face found in source image")
-    source_face = src_faces[0]
-
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    out_id = str(uuid.uuid4())
-    frames_dir = Path(TEMP_DIR) / f"morph_frames_{out_id}"
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    out_video_path = Path(TEMP_DIR) / f"morph_out_{out_id}.mp4"
-
     try:
-        track_embeddings = {}  # trackId -> list of embeddings (up to 5 per person)
-        track_bbox = {}  # trackId -> last bbox (for IoU fallback)
-        MAX_EMBEDDINGS_PER_TRACK = 5
-        SIM_THRESH = 0.28  # Lower threshold for pose variations
-        frame_idx = 0
-        while True:
+        _apply_use_cuda(req.use_cuda)
+        video_path = req.video_path
+        if not os.path.isfile(video_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+
+        interval_frames = max(1, int(fps * 2))
+        frame_indices = list(range(0, total_frames, interval_frames))[:20]
+
+        face_app = get_face_app()
+        raw_per_frame = []
+        stored_frames = []
+        keyframes_meta = []
+
+        cap = cv2.VideoCapture(video_path)
+        for idx in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
-            if not ret:
-                break
+            if not ret: continue
+            stored_frames.append(frame)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             faces = face_app.get(rgb)
-            # Assign track id by embedding similarity (same logic as detect-faces)
             frame_dets = []
             for f in faces:
                 bbox = f.bbox.astype(int).tolist()
                 emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
-                det = {"face": f, "bbox": bbox}
+                det = {"bbox": bbox}
                 if emb is not None:
                     det["embedding"] = np.asarray(emb, dtype=np.float32)
                 frame_dets.append(det)
-            next_id = max(list(track_embeddings.keys()) + list(track_bbox.keys()), default=-1) + 1
-            for det in frame_dets:
-                bbox = det["bbox"]
-                emb = det.get("embedding")
-                best_id = None
-                best_score = SIM_THRESH
-                # First try embedding matching against ALL stored embeddings
-                if emb is not None:
-                    for tid, emb_list in track_embeddings.items():
-                        for prev_emb in emb_list:
-                            sim = _cosine_sim(emb, prev_emb)
-                            if sim > best_score:
-                                best_score = sim
-                                best_id = tid
-                # Fallback to IoU if no embedding match
-                if best_id is None and track_bbox:
-                    best_iou = 0.3
-                    for tid, prev_bbox in track_bbox.items():
-                        iou = iou_box(bbox, prev_bbox)
-                        if iou > best_iou:
-                            best_iou = iou
-                            best_id = tid
-                if best_id is None:
-                    best_id = next_id
-                    next_id += 1
-                # Store embedding (keep up to MAX_EMBEDDINGS_PER_TRACK diverse embeddings)
-                if emb is not None:
-                    if best_id not in track_embeddings:
-                        track_embeddings[best_id] = []
-                    should_add = True
-                    for existing_emb in track_embeddings[best_id]:
-                        if _cosine_sim(emb, existing_emb) > 0.85:
-                            should_add = False
-                            break
-                    if should_add and len(track_embeddings[best_id]) < MAX_EMBEDDINGS_PER_TRACK:
-                        track_embeddings[best_id].append(emb)
-                track_bbox[best_id] = bbox
-                det["trackId"] = best_id
-            chosen_face = None
-            for det in frame_dets:
-                if det["trackId"] == target_track_id:
-                    chosen_face = det["face"]
-                    break
-            if chosen_face is not None:
-                # swapper.get expects the frame in the same format as face detection (RGB)
-                # Perform swap on RGB, then convert back to BGR for saving
-                rgb = swapper.get(rgb, chosen_face, source_face, paste_back=True)
-                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            frame_path = frames_dir / f"frame_{frame_idx:08d}.png"
-            cv2.imwrite(str(frame_path), frame)
-            frame_idx += 1
+            raw_per_frame.append(frame_dets)
+            h, w = frame.shape[:2]
+            keyframes_meta.append({"frameIndex": idx, "time": round(idx/fps, 2), "width": w, "height": h})
         cap.release()
 
+        with_tracks, track_embeddings = assign_track_ids_embedding(raw_per_frame)
+        
+        keyframes = []
+        for i, frame_dets in enumerate(with_tracks):
+            kf = keyframes_meta[i]
+            kf["faces"] = [{"bbox": d["bbox"], "trackId": d["trackId"]} for d in frame_dets]
+            _, buf = cv2.imencode(".png", stored_frames[i])
+            kf["imageBase64"] = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
+            keyframes.append(kf)
 
-        # Encode video with ffmpeg
-        ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-framerate", str(fps),
-            "-i", str(frames_dir / "frame_%08d.png"),
-            "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-preset", "fast", "-crf", "23",
-            str(out_video_path),
-        ]
-        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        return {
+            "fps": fps,
+            "totalFrames": total_frames,
+            "keyframes": keyframes,
+            "trackEmbeddings": track_embeddings
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-        return {"output_path": str(out_video_path)}
+@app.post("/swap")
+def swap(background_tasks: BackgroundTasks, req: SwapRequest = Body(...)):
+    job_id = req.job_id or str(uuid.uuid4())
+    update_job_progress(job_id, 0, "starting")
+    background_tasks.add_task(_do_swap, job_id, req)
+    return {"jobId": job_id, "status": "queued"}
+
+def _do_swap(job_id: str, req: SwapRequest):
+    frames_dir = None
+    try:
+        _apply_use_cuda(req.use_cuda)
+        src_path, video_path = req.source_image_path, req.video_path
+        target_track_id = req.target_face_track_id
+        
+        face_app, swapper = get_face_app(), get_swapper()
+        src_img = cv2.imread(src_path)
+        src_faces = face_app.get(cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB))
+        if not src_faces:
+            update_job_progress(job_id, 0, "failed", {"error": "No face in source"})
+            return
+        source_face = src_faces[0]
+
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        out_id = str(uuid.uuid4())
+        frames_dir = Path(TEMP_DIR) / f"morph_frames_{out_id}"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        out_video_path = Path(TEMP_DIR) / f"morph_out_{out_id}.mp4"
+
+        track_embeddings = {}
+        if req.target_face_embedding:
+            track_embeddings[target_track_id] = [np.array(req.target_face_embedding, dtype=np.float32)]
+
+        track_bbox = {}
+        SIM_THRESH = 0.42
+        frame_idx = 0
+        update_job_progress(job_id, 0, "processing")
+
+        while True:
+            ret, frame = cap.read()
+            if not ret: break
+            
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            faces = face_app.get(rgb)
+            frame_dets = []
+            for f in faces:
+                bbox = f.bbox.astype(int).tolist()
+                emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
+                det = {"face": f, "bbox": bbox, "embedding": np.asarray(emb, dtype=np.float32) if emb is not None else None}
+                frame_dets.append(det)
+
+            used_ids = set()
+            for det in sorted(frame_dets, key=lambda d: d["embedding"] is not None, reverse=True):
+                bbox, emb = det["bbox"], det["embedding"]
+                best_id, best_score = None, SIM_THRESH
+                if emb is not None:
+                    for tid, embs in track_embeddings.items():
+                        if tid in used_ids: continue
+                        for te in embs:
+                            sim = _cosine_sim(emb, te)
+                            if sim > best_score:
+                                best_score, best_id = sim, tid
+                if best_id is None and track_bbox:
+                    for tid, last_box in track_bbox.items():
+                        if tid in used_ids: continue
+                        if iou_box(bbox, last_box) > 0.35:
+                            best_id = tid; break
+                if best_id is None:
+                    best_id = max(list(track_embeddings.keys()) + list(track_bbox.keys()) + [-1]) + 1
+                used_ids.add(best_id)
+                det["trackId"] = best_id
+                track_bbox[best_id] = bbox
+                if emb is not None:
+                    if best_id not in track_embeddings: track_embeddings[best_id] = []
+                    if len(track_embeddings[best_id]) < 5: track_embeddings[best_id].append(emb)
+
+            for det in frame_dets:
+                if det["trackId"] == target_track_id:
+                    rgb_swapped = swapper.get(rgb, det["face"], source_face, paste_back=True)
+                    if req.enhance:
+                        enhancer = get_enhancer()
+                        if enhancer:
+                            _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
+                    frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
+                    break
+            
+            cv2.imwrite(str(frames_dir / f"frame_{frame_idx:08d}.png"), frame)
+            frame_idx += 1
+            if frame_idx % 25 == 0:
+                print(f"[{job_id}] Frame {frame_idx}/{total_frames}")
+                update_job_progress(job_id, (frame_idx / total_frames) * 100)
+                # Small memory cleanup for long videos
+                if frame_idx % 100 == 0:
+                    import gc
+                    gc.collect()
+
+        cap.release()
+        update_job_progress(job_id, 99, "encoding")
+        subprocess.run([
+            "ffmpeg", "-y", "-framerate", str(fps), "-i", str(frames_dir / "frame_%08d.png"),
+            "-i", str(video_path), "-map", "0:v", "-map", "1:a?", "-c:v", "libx264",
+            "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "23", "-c:a", "aac", "-shortest",
+            str(out_video_path)
+        ], check=True, capture_output=True)
+
+        update_job_progress(job_id, 100, "completed", {"output_path": str(out_video_path)})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        update_job_progress(job_id, 0, "failed", {"error": str(e)})
     finally:
-        import shutil
-        shutil.rmtree(frames_dir, ignore_errors=True)
-
+        if frames_dir:
+            import shutil
+            shutil.rmtree(frames_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

@@ -237,15 +237,25 @@ export async function generateWaveform(videoPath, outputDir) {
     throw new Error(`Video file not found: ${videoPath}`);
   }
 
-  return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
-      .complexFilter('showwavespic=s=2048x120:colors=cyan|blue')
-      .output(path.join(outputDir, 'waveform.png'))
-      .frames(1)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(new Error(`Waveform generation error: ${err.message}`)))
-      .run();
-  });
+  try {
+    const info = await getVideoInfo(videoPath);
+    if (!info.audio) {
+      console.log(`[FFMPEG] Skipping waveform for ${path.basename(videoPath)} (no audio)`);
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .complexFilter('showwavespic=s=2048x120:colors=cyan|blue')
+        .output(path.join(outputDir, 'waveform.png'))
+        .frames(1)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(new Error(`Waveform generation error: ${err.message}`)))
+        .run();
+    });
+  } catch (err) {
+    console.warn(`[FFMPEG] Failed to check audio/generate waveform: ${err.message}`);
+  }
 }
 
 /**

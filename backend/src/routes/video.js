@@ -118,12 +118,14 @@ router.get('/:id/waveform', async (req, res, next) => {
 
     // Generate waveform if it doesn't exist
     if (!(await fileExists(waveformPath))) {
+      console.log(`[VIDEO] Generating waveform for: ${videoId}`);
       await generateWaveform(videoPath, videoThumbDir);
     }
 
     res.sendFile(waveformPath);
   } catch (error) {
-    next(error);
+    console.error(`[VIDEO] Waveform error for ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Failed to generate waveform', detail: error.message });
   }
 });
 

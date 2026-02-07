@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getVideoUrl } from '../../services/api';
-import { morphDetectFaces, morphRun } from '../../services/api';
+import { morphDetectFaces, morphRun, morphGetProgress } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 import CharacterSelect from './CharacterSelect';
 
@@ -24,6 +24,7 @@ export default function MorphWizard({ project, onClose, onComplete }) {
   const [selectedTrackId, setSelectedTrackId] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [jobProgress, setJobProgress] = useState(null);
 
   const assets = project?.assets ?? [];
   const imageAssets = assets.filter(isImage);
@@ -57,15 +58,47 @@ export default function MorphWizard({ project, onClose, onComplete }) {
     if (!photoAsset?.filename || !videoAsset?.filename) return;
     setLoading(true);
     setError(null);
+    setJobProgress({ progress: 0, status: 'starting' });
+
+    const jobId = crypto.randomUUID();
+    let pollInterval = null;
+
     try {
       const useCuda = getMorphUseCuda();
-      const asset = await morphRun(photoAsset.filename, videoAsset.filename, selectedTrackId, useCuda);
-      onComplete?.(asset);
-      onClose?.();
+      const targetEmbedding = detectResult?.trackEmbeddings?.[selectedTrackId];
+
+      // Start polling and handle completion
+      pollInterval = setInterval(async () => {
+        try {
+          const status = await morphGetProgress(jobId);
+          setJobProgress(status);
+
+          if (status.status === 'completed' && status.asset) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            onComplete?.(status.asset);
+            onClose?.();
+          }
+        } catch (err) {
+          console.debug('Polling progress...', err.message);
+        }
+      }, 2000);
+
+      // Trigger the job
+      await morphRun(photoAsset.filename, videoAsset.filename, {
+        faceTrackId: selectedTrackId,
+        targetEmbedding,
+        jobId,
+        useCuda
+      });
+
+      // The poller takes it from here...
     } catch (e) {
+      if (pollInterval) clearInterval(pollInterval);
+      console.error('Morph run error:', e);
       setError(e.response?.data?.detail || e.response?.data?.error || e.message || 'Face swap failed');
-    } finally {
       setLoading(false);
+      setJobProgress(null);
     }
   };
 
@@ -182,6 +215,36 @@ export default function MorphWizard({ project, onClose, onComplete }) {
                 Replace <strong>Person {selectedTrackId + 1}</strong> in the video with the face from your photo. This may take a few minutes.
               </p>
               <p className="text-slate-500 text-sm">Photo: {photoAsset?.originalName || photoAsset?.filename} · Video: {videoAsset?.originalName || videoAsset?.filename}</p>
+
+              {loading && (
+                <div className="mt-8 flex flex-col items-center justify-center p-8 border border-slate-700 bg-slate-900/50 rounded-lg">
+                  <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                  <p className="text-blue-400 font-medium">
+                    {jobProgress?.status === 'detecting' ? 'Analyzing Faces...' :
+                      jobProgress?.status === 'encoding' ? 'Encoding Video...' :
+                        'Processing Face Swap...'}
+                  </p>
+
+                  {jobProgress && (
+                    <div className="w-full max-w-xs mt-4">
+                      <div className="flex justify-between text-xs text-slate-500 mb-1">
+                        <span>Progress</span>
+                        <span>{Math.round(jobProgress.progress)}%</span>
+                      </div>
+                      <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-blue-500 h-full transition-all duration-300"
+                          style={{ width: `${jobProgress.progress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-slate-500 text-xs mt-4 text-center">
+                    Please keep this window open. Total runtime depends on video length.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

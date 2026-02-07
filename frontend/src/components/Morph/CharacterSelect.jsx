@@ -31,14 +31,14 @@ export default function CharacterSelect({ keyframes = [], selectedTrackId, onSel
                   Frame {kf.frameIndex}
                 </div>
               )}
-              {kf.faces?.map((face) => {
+              {kf.faces?.map((face, faceIdx) => {
                 const [x1, y1, x2, y2] = face.bbox;
                 const isSelected = selectedTrackId === face.trackId;
                 const isHover = hoverTrack === face.trackId;
                 const label = `Person ${face.trackId + 1}`;
                 return (
                   <div
-                    key={`${i}-${face.trackId}`}
+                    key={`${i}-${faceIdx}-${face.trackId}`}
                     className="absolute border-2 cursor-pointer rounded"
                     style={{
                       left: `${(x1 / imgW) * 100}%`,
@@ -74,11 +74,10 @@ export default function CharacterSelect({ keyframes = [], selectedTrackId, onSel
               key={tid}
               type="button"
               onClick={() => onSelect(tid)}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                selectedTrackId === tid
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${selectedTrackId === tid
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
+                }`}
             >
               Person {tid + 1}
             </button>
