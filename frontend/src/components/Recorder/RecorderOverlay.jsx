@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function RecorderOverlay({
   isPaused,
@@ -7,8 +7,19 @@ export default function RecorderOverlay({
   onStop,
   onPause,
   onResume,
+  webcamStream = null,
+  webcamPosition = 'bottom-right',
+  webcamSize = 160,
+  webcamShape = 'circle',
 }) {
   const [displayTime, setDisplayTime] = useState('00:00');
+  const webcamVideoRef = useRef(null);
+
+  useEffect(() => {
+    if (webcamVideoRef.current && webcamStream) {
+      webcamVideoRef.current.srcObject = webcamStream;
+    }
+  }, [webcamStream]);
 
   useEffect(() => {
     const totalSec = Math.floor(elapsedSeconds);
@@ -17,8 +28,32 @@ export default function RecorderOverlay({
     setDisplayTime(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
   }, [elapsedSeconds]);
 
+  const positionClass = {
+    'bottom-right': 'bottom-4 right-4',
+    'bottom-left': 'bottom-4 left-4',
+    'top-right': 'top-4 right-4',
+    'top-left': 'top-4 left-4',
+  }[webcamPosition] || 'bottom-4 right-4';
+
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-4 px-4 py-3 bg-slate-800/95 border border-slate-600 rounded-xl shadow-xl">
+    <>
+      {/* Live webcam preview during recording */}
+      {webcamStream && (
+        <div
+          className={`fixed z-[9998] ${positionClass} overflow-hidden border-2 border-white/30 shadow-xl bg-slate-900 ${webcamShape === 'circle' ? 'rounded-full' : 'rounded-lg'}`}
+          style={{ width: webcamSize, height: webcamSize }}
+        >
+          <video
+            ref={webcamVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+        </div>
+      )}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-4 px-4 py-3 bg-slate-800/95 border border-slate-600 rounded-xl shadow-xl">
       {/* Timer */}
       <span className="font-mono text-lg font-medium text-white tabular-nums min-w-[4rem]">
         {displayTime}
@@ -51,5 +86,6 @@ export default function RecorderOverlay({
       </button>
       <span className="text-slate-500 text-xs hidden sm:inline">Ctrl+Shift+R</span>
     </div>
+    </>
   );
 }

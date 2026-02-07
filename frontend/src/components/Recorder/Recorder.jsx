@@ -22,6 +22,7 @@ export default function Recorder({ onClose, onRecordingComplete }) {
   const [displayStream, setDisplayStream] = useState(null);
   const [cropRegion, setCropRegion] = useState(null);
   const [elapsed, setElapsed] = useState(0);
+  const [webcamPreviewStream, setWebcamPreviewStream] = useState(null);
   const elapsedIntervalRef = useRef(null);
   const micStreamRef = useRef(null);
 
@@ -194,6 +195,7 @@ export default function Recorder({ onClose, onRecordingComplete }) {
       try {
         webcamStreamRef.current = await navigator.mediaDevices.getUserMedia({ video: true });
         wcStream = webcamStreamRef.current;
+        setWebcamPreviewStream(wcStream);
       } catch (e) {
         console.warn('Webcam access failed:', e);
       }
@@ -209,6 +211,7 @@ export default function Recorder({ onClose, onRecordingComplete }) {
   const handleStop = () => {
     stopRecording();
     setStep('preview');
+    setWebcamPreviewStream(null);
     audio.stop();
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -505,6 +508,10 @@ export default function Recorder({ onClose, onRecordingComplete }) {
           onStop={handleStop}
           onPause={pauseRecording}
           onResume={resumeRecording}
+          webcamStream={webcamPreviewStream}
+          webcamPosition={settings.webcamPosition}
+          webcamSize={settings.webcamSize}
+          webcamShape={settings.webcamShape}
         />
       </>
     );
