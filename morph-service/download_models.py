@@ -76,6 +76,16 @@ def main():
                 raise
     print("InSwapper ready.")
 
+    print("Downloading GFPGAN model...")
+    try:
+        from gfpgan import GFPGANer
+        model_url = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth'
+        # Just initialize it (CPU is fine for download)
+        GFPGANer(model_path=model_url, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=None, device='cpu')
+        print("GFPGAN ready.")
+    except Exception as e:
+        print(f"Warning: Failed to pre-download GFPGAN: {e}")
+
     print("All models downloaded to", models_dir)
 
 if __name__ == "__main__":

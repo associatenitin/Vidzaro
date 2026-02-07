@@ -1,109 +1,76 @@
 # Video Morph Service
 
-Python service for face detection and face swap used by Vidzaro's Video Morph feature. Uses [InsightFace](https://github.com/deepinsight/insightface) (free, open source).
+Python service for face detection and face swap used by Vidzaro's Video Morph feature. Uses [InsightFace](https://github.com/deepinsight/insightface) for swapping and [GFPGAN](https://github.com/TencentARC/GFPGAN) for high-definition face restoration.
+
+## Features
+
+- **Face Detection & Tracking**: Automatically identifies and tracks faces throughout the video.
+- **High-Quality Swap**: Uses InSwapper-128 for seamless face replacement.
+- **Face Enhancement**: Integrated GFPGAN for sharpening and restoring high-frequency details (eyes, teeth, skin texture) in the swapped faces.
+- **Audio Preservation**: Automatically carries over the original video's audio to the morphed result.
+- **Async Job Architecture**: Handles long processing tasks in the background without timing out.
+- **Full GPU Acceleration**: Optimized for NVIDIA RTX GPUs using CUDA 12.
 
 ## Requirements
 
 - **Python 3.10+**
-- **FFmpeg** on PATH (same as main Vidzaro)
-- **NVIDIA GPU** (optional but recommended): 8GB VRAM (e.g. RTX 4060) is sufficient. With GPU you need CUDA and cuDNN installed; then use `onnxruntime-gpu`.
-- **CPU-only**: Install `onnxruntime` instead of `onnxruntime-gpu` in requirements; processing will be slower.
+- **FFmpeg** on PATH (essential for audio merging and video encoding)
+- **NVIDIA GPU** (RTX 30-series or 40-series recommended): 8GB+ VRAM is ideal.
+- **NVIDIA Drivers**: Latest Game Ready or Studio drivers.
 
 ## Install
 
-```bash
-cd morph-service
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-# source .venv/bin/activate
+1. Create a virtual environment:
+   ```bash
+   cd morph-service
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   ```
 
-pip install -r requirements.txt
-```
+2. Install the core dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## Model download
+3. **IMPORTANT: Proper CUDA Support for Enhancement**  
+   To ensure GFPGAN uses your GPU, you must install the CUDA-enabled version of PyTorch:
+   ```bash
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+   ```
 
-Run once (recommended):
+## Model Download
 
+Run the download script once to fetch necessary AI models:
 ```bash
 python download_models.py
 ```
-
-This downloads the detection model (buffalo_s) and inswapper_128.onnx. If the official InsightFace download URL for inswapper fails (common), the script automatically falls back to **Hugging Face** (ezioruan/inswapper_128.onnx, ~554 MB).
-
-- **Detection**: Models go to `{MODELS_ROOT}/models/buffalo_s/` (~125 MB).
-- **InSwapper**: `{MODELS_ROOT}/models/inswapper_128.onnx` (~554 MB).
-
-**Disk:** ~1–1.5 GB total. If you already have the file, place `inswapper_128.onnx` in `morph-service/models/` and the service will use it.
-
-**Env (optional):**
-
-- `MODELS_ROOT` – Directory that contains a `models/` folder (default: same folder as `main.py`).
-- `TEMP_DIR` – Temp directory for frame output (default: system temp).
-- `PORT` – HTTP port (default: 8000).
-- `INSIGHTFACE_MODEL` – `buffalo_s` or `buffalo_l`.
-- `USE_CPU=1` – Use CPU only (avoids CUDA load errors if CUDA 12 DLLs are missing).
+This script downloads:
+- **InsightFace (buffalo_s)**: Detection model.
+- **InSwapper-128**: Swapping model (fallback to Hugging Face if official link is down).
+- **GFPGAN v1.4**: Restoration model (downloaded automatically on first use if not present).
 
 ## Run
 
 ```bash
-# From morph-service with venv activated
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+# Activation
+.\.venv\Scripts\Activate.ps1
 
-**To avoid CUDA DLL errors** (e.g. `cublasLt64_12.dll` missing), use CPU-only:
-
-```powershell
-# Windows PowerShell
-.\run-cpu.ps1
-```
-
-```cmd
-# Windows CMD
-run-cpu.bat
-```
-
-```bash
-# macOS/Linux
-USE_CPU=1 uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-Or:
-
-```bash
+# Start the service
 python main.py
 ```
+The service will listen on `http://localhost:8000`.
 
-## Endpoints
+## Architecture & Integration
 
-- **GET /health** – Health check.
-- **POST /detect-faces** – Body: `{ "video_path": "/absolute/path/to/video.mp4" }`. Returns keyframes with face bboxes and `trackId` per person.
-- **POST /swap** – Body: `{ "source_image_path": "...", "video_path": "...", "target_face_track_id": 0 }`. Returns `{ "output_path": "/path/to/output.mp4" }`.
+### Async Flow
+When a morph request is sent, the service returns a `jobId` immediately and starts processing in a background thread. The Vidzaro backend polls the `/progress/:jobId` endpoint. Once progress reaches 100%, the backend ingests the final file from the temp directory into the Vidzaro library.
 
-The Node backend passes absolute paths (from Vidzaro uploads dir) and receives the output path, then copies the file to uploads and returns the new asset to the frontend.
+### Development Utilities
+- `test_detect.py`: Verifies that the model can load and utilize CUDA on your local machine.
+- `morph_service.log`: Tracks detailed processing logs and errors.
 
-## CUDA / GPU vs CPU
+## Troubleshooting
 
-If you see an error like **"cublasLt64_12.dll which is missing"** or **"Error loading ... onnxruntime_providers_cuda.dll"**: ONNX Runtime tried the GPU and fell back to CPU. The service still works; processing will be slower.
-
-**To use GPU (choose one):**
-
-1. **CUDA via pip (recommended)**  
-   The project depends on a full suite of `nvidia-*-cu12` packages (cublas, cudnn, cufft, curand, cusolver, cusparse, cuda-runtime). When you `pip install -r requirements.txt`, these install all the necessary CUDA 12 runtime DLLs directly into your virtual environment. 
-   
-   **How it works**: At startup, `main.py` automatically scans your `site-packages` and registers these DLL directories with Windows using `os.add_dll_directory()`. This allows `onnxruntime-gpu` to find libraries like `cublasLt64_12.dll` and `cudart64_12.dll` without any manual setup. 
-   
-   *Note: You still need an **NVIDIA driver** (check with `nvidia-smi`), but you do **not** need to install the standalone CUDA Toolkit.*
-
-2. **Full CUDA 12 Toolkit**  
-   Install [CUDA 12](https://developer.nvidia.com/cuda-12-4-0-download-archive) and add its `bin` folder to your system PATH. Use this if you prefer the toolkit or if the pip-based approach does not work on your system.
-
-**To use CPU only:** Set `USE_CPU=1` before running the service or `download_models.py`. Or uninstall GPU runtime and use CPU:  
-  `pip uninstall onnxruntime-gpu nvidia-cublas-cu12 nvidia-cudnn-cu12` then `pip install onnxruntime`.
-
-## Resource notes (8GB GPU, 32GB RAM)
-
-- **VRAM**: buffalo_s + inswapper typically use 2–4 GB. If you hit OOM, set `INSIGHTFACE_MODEL=buffalo_s` (already default) and ensure no other heavy GPU apps are running.
-- **RAM**: Frames are processed one-by-one; 32 GB is plenty.
-- **Long videos**: Processing is frame-by-frame; for very long clips consider limiting duration in the app (e.g. first 2–5 minutes) or processing in chunks.
+- **Missing DLLs (cublasLt64_12.dll)**: The service automatically maps the CUDA libraries installed via pip. If you still see errors, ensure you are running `python main.py` within the activated `.venv`.
+- **GFPGAN Load Error**: We use a custom monkey-patch for `torchvision` compatibility. If you see `No module named torchvision.transforms.functional_tensor`, ensure you are using the latest `main.py` which includes the fix.
+- **OOM (Out of Memory)**: For very long videos (2000+ frames), the service runs `gc.collect()` every 100 frames to keep RAM usage stable. Ensure your system has at least 16GB RAM for long jobs.
