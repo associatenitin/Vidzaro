@@ -346,7 +346,8 @@ export async function exportVideo(projectData, outputPath, tempDir) {
 
     await new Promise((resolve, reject) => {
       finalCommand
-        .complexFilter(filterGraph.concat([`${vIn}copy[vfinal]`, `${aIn}copy[afinal]`]))
+        // Use format filter for video and anull for audio to finalize streams
+        .complexFilter(filterGraph.concat([`${vIn}format=yuv420p[vfinal]`, `${aIn}anull[afinal]`]))
         .map('[vfinal]')
         .map('[afinal]')
         .outputOptions(['-c:v libx264', '-preset fast', '-crf 23', '-c:a aac', '-b:a 192k'])

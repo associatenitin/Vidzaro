@@ -62,25 +62,6 @@ router.post('/detect-faces', async (req, res, next) => {
 });
 
 /**
- * GET /api/morph/progress/:jobId
- * Proxies to Python /progress/:jobId
- */
-router.get('/progress/:jobId', async (req, res, next) => {
-  try {
-    const response = await fetch(`${MORPH_SERVICE_URL}/progress/${req.params.jobId}`);
-    if (!response.ok) {
-      if (response.status === 404) return res.status(404).json({ error: 'Job not found' });
-      const text = await response.text();
-      return res.status(response.status).json({ error: 'Morph service error', detail: text });
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
  * POST /api/morph/run
  * Body: { photoId, videoId, faceTrackId, targetEmbedding, jobId }
  */

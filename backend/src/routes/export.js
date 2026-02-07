@@ -45,10 +45,42 @@ router.post('/', async (req, res, next) => {
     // Resolve videoId to videoPath for each clip
     const processedClips = await Promise.all(
       projectData.clips.map(async (clip) => {
-        const videoPath = clip.videoPath || path.join(UPLOADS_DIR, clip.videoId);
-        
+        let videoPath = clip.videoPath || path.join(UPLOADS_DIR, clip.videoId);
+
+        // Normalize URL-style paths (e.g. '/uploads/filename') to filesystem paths
+        try {
+          if (typeof videoPath === 'string') {
+            // Handle absolute/relative URL paths
+            if (videoPath.startsWith('/uploads') || videoPath.startsWith('uploads/')) {
+              videoPath = path.join(UPLOADS_DIR, path.basename(videoPath));
+            }
+
+            // Handle full URLs (http://.../uploads/filename)
+            if (videoPath.startsWith('http://') || videoPath.startsWith('https://')) {
+              try {
+                const urlObj = new URL(videoPath);
+                if (urlObj.pathname.startsWith('/uploads')) {
+                  videoPath = path.join(UPLOADS_DIR, path.basename(urlObj.pathname));
+                }
+              } catch (e) {
+                // ignore URL parse errors and continue
+              }
+            }
+
+            // If still not absolute, assume it's a filename under uploads
+            if (!path.isAbsolute(videoPath) && !videoPath.startsWith(UPLOADS_DIR)) {
+              videoPath = path.join(UPLOADS_DIR, path.basename(videoPath));
+            }
+          }
+        } catch (e) {
+          // Fallback: ensure we have a sensible uploads path
+          videoPath = path.join(UPLOADS_DIR, clip.videoId || '');
+        }
+
         if (!(await fileExists(videoPath))) {
-          throw new Error(`Video file not found for clip ${clip.id}: ${clip.videoId}`);
+          const err = new Error(`Video file not found for clip ${clip.id}: ${clip.videoId || clip.filename || clip.assetId}`);
+          err.code = 'ENOENT';
+          throw err;
         }
 
         return {

@@ -431,7 +431,17 @@ def _do_swap(job_id: str, req: SwapRequest):
         if not src_faces:
             update_job_progress(job_id, 0, "failed", {"error": "No face in source"})
             return
-        source_face = src_faces[0]
+        # Prefer the largest, most confident face from the source image.
+        def _face_score(face):
+            bbox = getattr(face, "bbox", None)
+            if bbox is None or len(bbox) != 4:
+                area = 0.0
+            else:
+                area = max(0.0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
+            det_score = float(getattr(face, "det_score", 0.0) or 0.0)
+            return (area, det_score)
+
+        source_face = max(src_faces, key=_face_score)
 
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -442,11 +452,14 @@ def _do_swap(job_id: str, req: SwapRequest):
         out_video_path = Path(TEMP_DIR) / f"morph_out_{out_id}.mp4"
 
         track_embeddings = {}
+        target_embedding = None
         if req.target_face_embedding:
-            track_embeddings[target_track_id] = [np.array(req.target_face_embedding, dtype=np.float32)]
+            target_embedding = np.array(req.target_face_embedding, dtype=np.float32)
+            track_embeddings[target_track_id] = [target_embedding]
 
         track_bbox = {}
         SIM_THRESH = 0.42
+        TARGET_SIM_THRESH = 0.38
         frame_idx = 0
         update_job_progress(job_id, 0, "processing")
 
@@ -462,6 +475,19 @@ def _do_swap(job_id: str, req: SwapRequest):
                 emb = getattr(f, "normed_embedding", getattr(f, "embedding", None))
                 det = {"face": f, "bbox": bbox, "embedding": np.asarray(emb, dtype=np.float32) if emb is not None else None}
                 frame_dets.append(det)
+
+            target_det = None
+            target_score = None
+            if target_embedding is not None:
+                for det in frame_dets:
+                    if det["embedding"] is None:
+                        continue
+                    sim = _cosine_sim(det["embedding"], target_embedding)
+                    if target_score is None or sim > target_score:
+                        target_score = sim
+                        target_det = det
+                if target_score is None or target_score < TARGET_SIM_THRESH:
+                    target_det = None
 
             used_ids = set()
             for det in sorted(frame_dets, key=lambda d: d["embedding"] is not None, reverse=True):
@@ -488,15 +514,23 @@ def _do_swap(job_id: str, req: SwapRequest):
                     if best_id not in track_embeddings: track_embeddings[best_id] = []
                     if len(track_embeddings[best_id]) < 5: track_embeddings[best_id].append(emb)
 
-            for det in frame_dets:
-                if det["trackId"] == target_track_id:
-                    rgb_swapped = swapper.get(rgb, det["face"], source_face, paste_back=True)
-                    if req.enhance:
-                        enhancer = get_enhancer()
-                        if enhancer:
-                            _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
-                    frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
-                    break
+            if target_det is not None:
+                rgb_swapped = swapper.get(rgb, target_det["face"], source_face, paste_back=True)
+                if req.enhance:
+                    enhancer = get_enhancer()
+                    if enhancer:
+                        _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
+                frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
+            else:
+                for det in frame_dets:
+                    if det["trackId"] == target_track_id:
+                        rgb_swapped = swapper.get(rgb, det["face"], source_face, paste_back=True)
+                        if req.enhance:
+                            enhancer = get_enhancer()
+                            if enhancer:
+                                _, _, rgb_swapped = enhancer.enhance(rgb_swapped, has_aligned=False, only_center_face=False, paste_back=True)
+                        frame = cv2.cvtColor(rgb_swapped, cv2.COLOR_RGB2BGR)
+                        break
             
             cv2.imwrite(str(frames_dir / f"frame_{frame_idx:08d}.png"), frame)
             frame_idx += 1
