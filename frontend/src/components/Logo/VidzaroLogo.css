@@ -1,0 +1,158 @@
+/* Vidzaro Logo — dark fantasy wizard magic animation */
+
+.vidzaro-logo {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Intro: logo scales in from center; pulse at 2s */
+.vidzaro-logo--animated {
+  animation: vidzaro-intro 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+             vidzaro-pulse 0.5s ease-out 2s forwards;
+}
+
+@keyframes vidzaro-intro {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Circle draws in over ~0.8s */
+.vidzaro-logo--animated .vidzaro-logo__circle {
+  animation: vidzaro-circle-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes vidzaro-circle-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.vidzaro-logo--animated .vidzaro-logo__inner-ring {
+  animation: vidzaro-inner-fade 0.5s ease-out 0.6s forwards;
+}
+
+@keyframes vidzaro-inner-fade {
+  to {
+    stroke-opacity: 0.5;
+  }
+}
+
+/* Runes fade in after circle */
+.vidzaro-logo--animated .vidzaro-logo__rune {
+  animation: vidzaro-rune-appear 0.3s ease-out forwards;
+}
+
+@keyframes vidzaro-rune-appear {
+  to {
+    stroke-opacity: 0.7;
+  }
+}
+
+/* Glow fades in during intro, then breathes (idle) */
+.vidzaro-logo--animated .vidzaro-logo__glow {
+  opacity: 0;
+  animation: vidzaro-glow-in 1.4s ease-out 0.2s forwards,
+             vidzaro-glow-breathe 3s ease-in-out 2.8s infinite;
+}
+
+@keyframes vidzaro-glow-in {
+  0% {
+    opacity: 0;
+  }
+  60% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes vidzaro-glow-breathe {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.03);
+  }
+}
+
+/* Particles: spiral inward and fade (condensing into V) */
+.vidzaro-logo--animated .vidzaro-logo__particle {
+  opacity: 0;
+  transform-origin: 0 0;
+  animation: vidzaro-particle-condense 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes vidzaro-particle-condense {
+  0% {
+    opacity: 0;
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.15) rotate(180deg);
+  }
+}
+
+/* V symbol draws in as energy condenses */
+.vidzaro-logo--animated .vidzaro-logo__v {
+  animation: vidzaro-v-draw 0.6s cubic-bezier(0.4, 0, 0.2, 1) 1.4s forwards;
+}
+
+@keyframes vidzaro-v-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes vidzaro-pulse {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: brightness(1.5) drop-shadow(0 0 12px rgba(167, 139, 250, 0.7));
+  }
+  100% {
+    filter: brightness(1) drop-shadow(0 0 6px rgba(167, 139, 250, 0.25));
+  }
+}
+
+/* Non-animated: show final state */
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__circle {
+  stroke-dashoffset: 0;
+}
+
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__inner-ring {
+  stroke-opacity: 0.5;
+}
+
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__rune {
+  stroke-opacity: 0.5;
+}
+
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__glow {
+  opacity: 0.25;
+}
+
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__particle {
+  display: none;
+}
+
+.vidzaro-logo:not(.vidzaro-logo--animated) .vidzaro-logo__v {
+  stroke-dashoffset: 0;
+}

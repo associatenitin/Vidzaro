@@ -1,0 +1,206 @@
+/* Arcane mist — drifting wizard-themed wisps behind the menu bar */
+
+.arcane-mist-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Base tint — ensures a visible purple wash */
+.arcane-mist-bg__base {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(45, 27, 78, 0.25) 0%,
+    rgba(74, 25, 66, 0.2) 30%,
+    rgba(30, 27, 75, 0.25) 60%,
+    rgba(45, 27, 78, 0.2) 100%
+  );
+  background-size: 200% 100%;
+  animation: arcane-mist-base-shift 10s ease-in-out infinite;
+}
+
+@keyframes arcane-mist-base-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.arcane-mist-bg__wisp {
+  position: absolute;
+  width: 50%;
+  height: 120%;
+  top: -10%;
+  border-radius: 50%;
+  filter: blur(24px);
+}
+
+.arcane-mist-bg__wisp--1 {
+  left: -10%;
+  background: radial-gradient(
+    ellipse 60% 80% at 40% 50%,
+    rgba(167, 139, 250, 0.5) 0%,
+    rgba(107, 33, 168, 0.35) 35%,
+    rgba(74, 25, 66, 0.15) 60%,
+    transparent 80%
+  );
+  animation: arcane-mist-drift-1 14s ease-in-out infinite;
+}
+
+.arcane-mist-bg__wisp--2 {
+  left: 20%;
+  background: radial-gradient(
+    ellipse 70% 70% at 60% 50%,
+    rgba(139, 92, 246, 0.45) 0%,
+    rgba(99, 102, 241, 0.3) 40%,
+    transparent 75%
+  );
+  animation: arcane-mist-drift-2 16s ease-in-out infinite 2s;
+}
+
+.arcane-mist-bg__wisp--3 {
+  left: 40%;
+  background: radial-gradient(
+    ellipse 65% 75% at 50% 50%,
+    rgba(167, 139, 250, 0.4) 0%,
+    rgba(45, 27, 78, 0.25) 50%,
+    transparent 75%
+  );
+  animation: arcane-mist-drift-3 18s ease-in-out infinite 1s;
+}
+
+.arcane-mist-bg__wisp--4 {
+  left: 60%;
+  background: radial-gradient(
+    ellipse 55% 85% at 70% 50%,
+    rgba(107, 33, 168, 0.4) 0%,
+    rgba(30, 27, 75, 0.2) 45%,
+    transparent 75%
+  );
+  animation: arcane-mist-drift-4 15s ease-in-out infinite 3s;
+}
+
+@keyframes arcane-mist-drift-1 {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateX(25%) translateY(3%);
+    opacity: 0.75;
+  }
+}
+
+@keyframes arcane-mist-drift-2 {
+  0%, 100% {
+    transform: translateX(15%) translateY(-2%);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateX(-20%) translateY(2%);
+    opacity: 0.7;
+  }
+}
+
+@keyframes arcane-mist-drift-3 {
+  0%, 100% {
+    transform: translateX(-10%) translateY(2%);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateX(20%) translateY(-3%);
+    opacity: 0.7;
+  }
+}
+
+@keyframes arcane-mist-drift-4 {
+  0%, 100% {
+    transform: translateX(20%) translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateX(-25%) translateY(2%);
+    opacity: 0.65;
+  }
+}
+
+/* Shimmer sweep — magic touch passing across */
+.arcane-mist-bg__shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(196, 181, 253, 0.15) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 60% 100%;
+  animation: arcane-mist-shimmer 6s ease-in-out infinite;
+}
+
+@keyframes arcane-mist-shimmer {
+  0%, 100% {
+    background-position: -60% 0;
+  }
+  50% {
+    background-position: 160% 0;
+  }
+}
+
+/* Glowing bottom edge — arcane energy line */
+.arcane-mist-bg__glow-edge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(167, 139, 250, 0.2) 20%,
+    rgba(196, 181, 253, 0.4) 50%,
+    rgba(167, 139, 250, 0.2) 80%,
+    transparent 100%
+  );
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+  animation: arcane-mist-glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes arcane-mist-glow-pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Twinkling sparkles */
+.arcane-mist-bg__sparkle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(196, 181, 253, 0.6);
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.5);
+  animation: arcane-mist-sparkle 2.5s ease-in-out infinite;
+}
+
+@keyframes arcane-mist-sparkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.2);
+  }
+}

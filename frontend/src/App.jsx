@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useProject } from './hooks/useProject';
 import MediaLibrary from './components/Library/MediaLibrary';
 import MenuBar from './components/MenuBar/MenuBar';
+import HeaderBrand from './components/Logo/HeaderBrand';
+import ArcaneMistBg from './components/Logo/MagicWandBg';
 import Toolbar from './components/Toolbar/Toolbar';
 import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
@@ -255,8 +257,10 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
       {/* Menu bar & header */}
-      <header className="bg-slate-800 border-b border-slate-700 px-4 py-0 flex-shrink-0 h-11 flex items-center gap-6">
-        <h1 className="text-lg font-bold text-white tracking-tight pr-2 border-r border-slate-600">Vidzaro</h1>
+      <header className="relative overflow-hidden bg-slate-800 border-b border-slate-700 px-4 py-0 flex-shrink-0 h-12 flex items-center gap-6">
+        <ArcaneMistBg />
+        <div className="relative z-10 flex items-center gap-6 flex-1 min-w-0">
+          <HeaderBrand />
         <MenuBar
           onNewProject={handleNewProject}
           onOpen={handleLoad}
@@ -278,13 +282,14 @@ function App() {
           onAbout={handleAbout}
           onResetTimelineHeight={handleResetTimelineHeight}
         />
-        <input
-          type="text"
-          value={project.name}
-          onChange={(e) => setProjectName(e.target.value)}
-          className="ml-auto bg-slate-900 border border-slate-700 px-3 py-1.5 rounded text-sm focus:outline-none focus:border-blue-500 w-52 placeholder-slate-500"
-          placeholder="Project name"
-        />
+          <input
+            type="text"
+            value={project.name}
+            onChange={(e) => setProjectName(e.target.value)}
+            className="ml-auto bg-slate-900 border border-slate-700 px-3 py-1.5 rounded text-sm focus:outline-none focus:border-blue-500 w-52 placeholder-slate-500"
+            placeholder="Project name"
+          />
+        </div>
       </header>
 
       {/* Main Content Area (Upper Section) */}
