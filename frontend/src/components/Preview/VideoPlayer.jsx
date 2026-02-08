@@ -44,8 +44,8 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   const videoClips = activeClips.filter(c => c.clip.videoEnabled !== false);
   const topVideoClip = videoClips[0] || null;
 
-  // Show preview if no active clips but preview asset is selected
-  const showPreview = !topVideoClip && previewAsset;
+  // Show selected library asset in player whenever one is selected (from Media Library)
+  const showPreview = !!previewAsset;
 
   // Reset preview time when asset changes
   useEffect(() => {

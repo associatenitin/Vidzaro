@@ -63,6 +63,19 @@ function App() {
     }
   }, [loadAutoSave]);
 
+  // When user selects a clip on the timeline, seek playhead into it so the player shows that clip
+  useEffect(() => {
+    if (!selectedClipId || !project.clips.length) return;
+    const clip = project.clips.find(c => c.id === selectedClipId);
+    if (!clip) return;
+    const start = clip.startPos ?? 0;
+    const duration = ((clip.trimEnd ?? clip.endTime) - (clip.trimStart ?? 0)) / (clip.speed || 1);
+    const end = start + duration;
+    if (currentTime < start || currentTime > end) {
+      setCurrentTime(start);
+    }
+  }, [selectedClipId, project.clips]);
+
   // Layout state
   const [timelineHeight, setTimelineHeight] = useState(300); // Initial height in pixels
   const [isResizing, setIsResizing] = useState(false);
@@ -290,7 +303,10 @@ function App() {
               const position = trackId !== undefined ? { track: trackId, time: 0 } : null;
               addClip(asset, position);
             }}
-            onAssetSelect={setSelectedAsset}
+            onAssetSelect={(asset) => {
+              setSelectedAsset(asset);
+              if (asset) setSelectedClipId(null); // single selection: library takes precedence
+            }}
             selectedAssetId={selectedAsset?.id}
             onShare={(asset) => setShareDialogAsset(asset)}
           />
@@ -346,7 +362,10 @@ function App() {
           onDetachAudio={detachAudio}
           activeTool={activeTool}
           selectedClipId={selectedClipId}
-          onClipSelect={setSelectedClipId}
+          onClipSelect={(clipId) => {
+            setSelectedClipId(clipId);
+            if (clipId != null) setSelectedAsset(null); // single selection: timeline takes precedence
+          }}
           onAddTrack={addTrack}
           onRemoveTrack={removeTrack}
         />
