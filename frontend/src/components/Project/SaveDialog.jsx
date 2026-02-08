@@ -112,11 +112,22 @@ export default function SaveDialog({ isOpen, onClose, projectName, onSave, onSav
     onClose();
   };
 
+  const handleBackdropClick = (e) => {
+    // Only close when the backdrop itself is clicked, not when events bubble from children
+    if (e.target === e.currentTarget) {
+      handleCancel();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleCancel}>
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" 
+      onClick={handleBackdropClick}
+    >
       <div 
         className="bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-full max-w-2xl mx-4"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
