@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVideoUrl } from '../../services/api';
 
 export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
@@ -6,6 +6,8 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   const isSeekingRef = useRef(false);
   const [previewTime, setPreviewTime] = useState(0);
   const progressRef = useRef(null);
+  const displaySourceRef = useRef(null); // video or img element from the active layer (for Take Photo)
+  const [hasDisplaySource, setHasDisplaySource] = useState(false);
 
   // Calculate total duration from clips
   const totalDuration = project.clips.reduce((max, clip) => {
@@ -74,6 +76,45 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   const displayDuration = showPreview ? (previewAsset?.duration || 0) : totalDuration;
   const progress = displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
 
+  const registerDisplaySource = useCallback((el) => {
+    displaySourceRef.current = el;
+    setHasDisplaySource(!!el);
+  }, []);
+
+  const takePhoto = useCallback(() => {
+    const el = displaySourceRef.current;
+    if (!el) return;
+    const tag = el.tagName.toUpperCase();
+    const canvas = document.createElement('canvas');
+    let w, h;
+    if (tag === 'VIDEO') {
+      w = el.videoWidth;
+      h = el.videoHeight;
+      if (w === 0 || h === 0) return;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(el, 0, 0, w, h);
+    } else if (tag === 'IMG') {
+      w = el.naturalWidth;
+      h = el.naturalHeight;
+      if (w === 0 || h === 0) return;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(el, 0, 0, w, h);
+    } else return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `frame-${Date.now()}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  }, []);
+
   return (
     <div className="w-full max-w-4xl relative group bg-black rounded-lg shadow-2xl overflow-hidden aspect-video">
       {showPreview ? (
@@ -89,6 +130,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
               onTimeUpdate(time);
             }
           }}
+          registerDisplaySource={registerDisplaySource}
         />
       ) : (
         <>
@@ -126,6 +168,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
                 currentTime={currentTime}
                 onTimeUpdate={onTimeUpdate} // Top video ALWAYS drives if it exists
                 project={project}
+                registerDisplaySource={registerDisplaySource}
               />
             </div>
           ) : (
@@ -243,6 +286,20 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           <div className="text-white/90 text-sm font-mono">
             {formatTime(displayTime)} / {formatTime(displayDuration)}
           </div>
+
+          {/* Take Photo */}
+          <button
+            onClick={takePhoto}
+            disabled={!hasDisplaySource}
+            className="p-2 text-white/80 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Take photo (capture current frame)"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 13v7a2 2 0 01-2 2H7a2 2 0 01-2-2v-7" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -310,11 +367,19 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project })
   );
 }
 
-function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project }) {
+function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
   const videoRef = useRef(null);
+  const mediaRef = useRef(null); // same element as video or img, for Take Photo
   const { clip, clipLocalTime } = clipInfo;
   const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
   const videoUrl = getVideoUrl(clip.videoId);
+
+  useEffect(() => {
+    if (registerDisplaySource) {
+      registerDisplaySource(mediaRef.current);
+      return () => registerDisplaySource(null);
+    }
+  }, [registerDisplaySource, isImage]);
 
   const getFilterStyle = (filter) => {
     switch (filter) {
@@ -360,6 +425,7 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project })
   if (isImage) {
     return (
       <img
+        ref={mediaRef}
         src={videoUrl}
         className="max-w-full max-h-full object-contain"
         style={{ filter: getFilterStyle(clip.filter) }}
@@ -370,7 +436,7 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project })
 
   return (
     <video
-      ref={videoRef}
+      ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
       src={videoUrl}
       className="max-w-full max-h-full"
       style={{ filter: getFilterStyle(clip.filter) }}
@@ -388,12 +454,20 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project })
 }
 
 // Preview Asset Layer for Media Library preview
-function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
+function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate, registerDisplaySource }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const mediaRef = useRef(null); // img or video for Take Photo
   const isImage = asset.type === 'image' || asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
   const isAudio = asset.type === 'audio' || asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i);
   const videoUrl = getVideoUrl(asset.filename);
+
+  useEffect(() => {
+    if (registerDisplaySource) {
+      registerDisplaySource(mediaRef.current);
+      return () => registerDisplaySource(null);
+    }
+  }, [registerDisplaySource, isImage, isAudio]);
 
   // Handle video playback
   useEffect(() => {
@@ -443,6 +517,7 @@ function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
     return (
       <div className="w-full h-full flex items-center justify-center">
         <img
+          ref={mediaRef}
           src={videoUrl}
           alt={asset.originalName}
           className="max-w-full max-h-full object-contain"
@@ -476,7 +551,7 @@ function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate }) {
   return (
     <div className="w-full h-full flex items-center justify-center relative">
       <video
-        ref={videoRef}
+        ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
         src={videoUrl}
         className="max-w-full max-h-full"
         onTimeUpdate={handleTimeUpdate}
