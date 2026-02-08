@@ -441,11 +441,11 @@ def apply_temporal_smoothing_region(frame_rgb, face_history, bbox, alpha=0.7):
     smoothed[y1:y2, x1:x2] = region
     return smoothed
 
-def soften_swap_edges(original_rgb, swapped_rgb, bbox, blur_radius=0.22):
-    """Soften the edges of the face swap using a difference-based mask.
+def soften_swap_edges(original_rgb, swapped_rgb, bbox, blur_radius=0.08):
+    """Lightly soften only the outermost edge of the face swap region.
     
-    Instead of re-blending, we detect where InsightFace changed pixels
-    and feather the edges of that changed region to avoid hard seams.
+    Detects where InsightFace changed pixels and applies a thin feather
+    at the boundary only — keeping the swapped face fully intact inside.
     """
     if bbox is None or len(bbox) != 4:
         return swapped_rgb
@@ -453,10 +453,9 @@ def soften_swap_edges(original_rgb, swapped_rgb, bbox, blur_radius=0.22):
     h, w = original_rgb.shape[:2]
     x1, y1, x2, y2 = [int(v) for v in bbox]
     
-    # Expand the region we analyze for changes
     face_w = x2 - x1
     face_h = y2 - y1
-    margin = int(max(face_w, face_h) * 0.4)
+    margin = int(max(face_w, face_h) * 0.25)
     
     rx1 = max(0, x1 - margin)
     ry1 = max(0, y1 - margin)
@@ -466,30 +465,26 @@ def soften_swap_edges(original_rgb, swapped_rgb, bbox, blur_radius=0.22):
     if rx2 <= rx1 or ry2 <= ry1:
         return swapped_rgb
     
-    # Find changed pixels (where InsightFace pasted the face)
     orig_region = original_rgb[ry1:ry2, rx1:rx2].astype(np.float32)
     swap_region = swapped_rgb[ry1:ry2, rx1:rx2].astype(np.float32)
     
     diff = np.abs(swap_region - orig_region).mean(axis=2)
     
-    # Create binary mask of changed pixels (threshold)
-    change_mask = (diff > 3.0).astype(np.float32)
+    # Binary mask of changed pixels
+    change_mask = (diff > 5.0).astype(np.float32)
     
     if change_mask.sum() < 10:
-        return swapped_rgb  # No significant changes
+        return swapped_rgb
     
-    # Erode the mask slightly to pull the blend boundary inward
-    erode_k = max(3, int(min(change_mask.shape) * 0.03)) | 1
-    change_mask = cv2.erode(change_mask, np.ones((erode_k, erode_k), np.uint8))
-    
-    # Heavy Gaussian blur to feather the edges
+    # Only blur a thin border around the change region
     rh, rw = change_mask.shape
-    k = max(21, int(min(rw, rh) * blur_radius)) | 1
+    k = max(7, int(min(rw, rh) * blur_radius)) | 1
     soft_mask = cv2.GaussianBlur(change_mask, (k, k), 0)
+    
+    # Ensure the interior stays at 1.0 (fully swapped)
+    soft_mask = np.maximum(soft_mask, change_mask)
     soft_mask = np.clip(soft_mask, 0, 1)[..., None]
     
-    # Blend: use swapped pixels where mask is 1, original where 0,
-    # smooth transition at edges
     blended = orig_region * (1. - soft_mask) + swap_region * soft_mask
     
     result = swapped_rgb.copy()
