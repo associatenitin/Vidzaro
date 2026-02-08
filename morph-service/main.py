@@ -441,38 +441,60 @@ def apply_temporal_smoothing_region(frame_rgb, face_history, bbox, alpha=0.7):
     smoothed[y1:y2, x1:x2] = region
     return smoothed
 
-def blend_face_region(base_rgb, swapped_rgb, bbox, feather=0.18):
-    """Blend swapped face with base using a soft elliptical mask to reduce seams."""
+def soften_swap_edges(original_rgb, swapped_rgb, bbox, blur_radius=0.22):
+    """Soften the edges of the face swap using a difference-based mask.
+    
+    Instead of re-blending, we detect where InsightFace changed pixels
+    and feather the edges of that changed region to avoid hard seams.
+    """
     if bbox is None or len(bbox) != 4:
         return swapped_rgb
-
-    h, w = swapped_rgb.shape[:2]
+    
+    h, w = original_rgb.shape[:2]
     x1, y1, x2, y2 = [int(v) for v in bbox]
-    pad = int(max(x2 - x1, y2 - y1) * 0.08)
-    x1 = max(0, min(w - 1, x1 - pad))
-    y1 = max(0, min(h - 1, y1 - pad))
-    x2 = max(0, min(w, x2 + pad))
-    y2 = max(0, min(h, y2 + pad))
-
-    if x2 <= x1 or y2 <= y1:
+    
+    # Expand the region we analyze for changes
+    face_w = x2 - x1
+    face_h = y2 - y1
+    margin = int(max(face_w, face_h) * 0.4)
+    
+    rx1 = max(0, x1 - margin)
+    ry1 = max(0, y1 - margin)
+    rx2 = min(w, x2 + margin)
+    ry2 = min(h, y2 + margin)
+    
+    if rx2 <= rx1 or ry2 <= ry1:
         return swapped_rgb
-
-    base_region = base_rgb[y1:y2, x1:x2]
-    swap_region = swapped_rgb[y1:y2, x1:x2]
-    rh, rw = swap_region.shape[:2]
-
-    mask = np.zeros((rh, rw), dtype=np.float32)
-    center = (rw // 2, rh // 2)
-    axes = (max(1, int(rw * 0.45)), max(1, int(rh * 0.55)))
-    cv2.ellipse(mask, center, axes, 0, 0, 360, 1, -1)
-
-    k = max(9, int(min(rw, rh) * feather) | 1)
-    mask = cv2.GaussianBlur(mask, (k, k), 0)
-    mask = mask[..., None]
-
-    blended = base_region * (1 - mask) + swap_region * mask
-    swapped_rgb[y1:y2, x1:x2] = blended.astype(np.uint8)
-    return swapped_rgb
+    
+    # Find changed pixels (where InsightFace pasted the face)
+    orig_region = original_rgb[ry1:ry2, rx1:rx2].astype(np.float32)
+    swap_region = swapped_rgb[ry1:ry2, rx1:rx2].astype(np.float32)
+    
+    diff = np.abs(swap_region - orig_region).mean(axis=2)
+    
+    # Create binary mask of changed pixels (threshold)
+    change_mask = (diff > 3.0).astype(np.float32)
+    
+    if change_mask.sum() < 10:
+        return swapped_rgb  # No significant changes
+    
+    # Erode the mask slightly to pull the blend boundary inward
+    erode_k = max(3, int(min(change_mask.shape) * 0.03)) | 1
+    change_mask = cv2.erode(change_mask, np.ones((erode_k, erode_k), np.uint8))
+    
+    # Heavy Gaussian blur to feather the edges
+    rh, rw = change_mask.shape
+    k = max(21, int(min(rw, rh) * blur_radius)) | 1
+    soft_mask = cv2.GaussianBlur(change_mask, (k, k), 0)
+    soft_mask = np.clip(soft_mask, 0, 1)[..., None]
+    
+    # Blend: use swapped pixels where mask is 1, original where 0,
+    # smooth transition at edges
+    blended = orig_region * (1. - soft_mask) + swap_region * soft_mask
+    
+    result = swapped_rgb.copy()
+    result[ry1:ry2, rx1:rx2] = blended.astype(np.uint8)
+    return result
 
 def multi_stage_enhancement(face_img, use_codeformer=True):
     """Apply multiple enhancement stages for best quality"""
@@ -937,6 +959,17 @@ def _do_swap(job_id: str, req: SwapRequest):
             SIM_THRESH = QUALITY_THRESHOLD
             TARGET_SIM_THRESH = 0.38
         
+        # Filter out tiny/low-confidence detections to avoid swap artifacts
+        if req.quality_mode == "best":
+            min_face_area = 80 * 80
+            min_det_score = 0.35
+        elif req.quality_mode == "fast":
+            min_face_area = 48 * 48
+            min_det_score = 0.25
+        else:
+            min_face_area = 60 * 60
+            min_det_score = 0.3
+
         frame_idx = 0
         update_job_progress(job_id, 0, "processing")
         print(f"[{job_id}] Starting face swap processing for {total_frames} frames...")
@@ -954,16 +987,8 @@ def _do_swap(job_id: str, req: SwapRequest):
                 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                # Apply preprocessing for better face detection
-                if req.quality_mode == "best":
-                    try:
-                        rgb_processed = apply_post_processing(rgb.copy())
-                        faces = face_app.get(rgb_processed)
-                    except Exception as e:
-                        print(f"Preprocessing failed for frame {frame_idx}: {e}")
-                        faces = face_app.get(rgb)
-                else:
-                    faces = face_app.get(rgb)
+                # Detect faces directly - no preprocessing to avoid artifacts
+                faces = face_app.get(rgb)
                 
                 frame_dets = []
                 for f in faces:
@@ -974,6 +999,8 @@ def _do_swap(job_id: str, req: SwapRequest):
                         # Calculate quality metrics
                         det_score = float(getattr(f, "det_score", 0.0) or 0.0)
                         face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) if len(bbox) == 4 else 0
+                        if face_area < min_face_area or det_score < min_det_score:
+                            continue
                         quality_score = det_score * (1.0 + np.log10(max(face_area, 1)) / 10.0)
                         
                         det = {
@@ -1061,44 +1088,13 @@ def _do_swap(job_id: str, req: SwapRequest):
                     try:
                         print(f"[{job_id}] Processing frame {frame_idx}: Found target face, swapping...")
                         
-                        # Enhanced face swapping
+                        orig_bbox = target_det["bbox"].copy() if isinstance(target_det["bbox"], np.ndarray) else target_det["bbox"][:]
+                        
+                        # Let InsightFace handle the swap and paste
                         swapped_rgb = swapper.get(rgb, target_det["face"], source_face, paste_back=True)
                         
-                        # Apply face alignment if in best quality mode
-                        if req.quality_mode == "best":
-                            try:
-                                face_bbox = target_det["bbox"]
-                                x1, y1, x2, y2 = face_bbox
-                                face_region = swapped_rgb[y1:y2, x1:x2]
-                                aligned_face = enhance_face_alignment(face_region)
-                                swapped_rgb[y1:y2, x1:x2] = aligned_face
-                            except Exception as e:
-                                print(f"Face alignment during swap failed: {e}")
-                        
-                        # Multi-stage enhancement
-                        if req.enhance:
-                            print(f"[{job_id}] Applying enhancements to frame {frame_idx}...")
-                            swapped_rgb = multi_stage_enhancement(
-                                swapped_rgb, 
-                                use_codeformer=req.use_codeformer
-                            )
-                        
-                        # Temporal smoothing
-                        if req.temporal_smoothing and face_history:
-                            swapped_rgb = apply_temporal_smoothing_region(
-                                swapped_rgb,
-                                face_history,
-                                target_det["bbox"]
-                            )
-
-                        # Blend the face region to reduce seam artifacts
-                        swapped_rgb = blend_face_region(rgb, swapped_rgb, target_det["bbox"])
-                        
-                        # Update face history for temporal smoothing
-                        if req.temporal_smoothing:
-                            face_history.append(swapped_rgb.copy())
-                            if len(face_history) > TEMPORAL_SMOOTH_FRAMES:
-                                face_history.pop(0)
+                        # Soften the edges of the pasted region to remove hard seams
+                        swapped_rgb = soften_swap_edges(rgb, swapped_rgb, orig_bbox)
                                 
                     except Exception as e:
                         print(f"Face swap failed for frame {frame_idx}: {e}")
@@ -1111,29 +1107,10 @@ def _do_swap(job_id: str, req: SwapRequest):
                     for det in frame_dets:
                         if det["trackId"] == target_track_id:
                             try:
+                                orig_bbox = det["bbox"].copy() if isinstance(det["bbox"], np.ndarray) else det["bbox"][:]
+                                
                                 swapped_rgb = swapper.get(rgb, det["face"], source_face, paste_back=True)
-                                
-                                if req.enhance:
-                                    print(f"[{job_id}] Applying enhancements to frame {frame_idx} (track fallback)...")
-                                    swapped_rgb = multi_stage_enhancement(
-                                        swapped_rgb, 
-                                        use_codeformer=req.use_codeformer
-                                    )
-                                
-                                if req.temporal_smoothing and face_history:
-                                    swapped_rgb = apply_temporal_smoothing_region(
-                                        swapped_rgb,
-                                        face_history,
-                                        det["bbox"]
-                                    )
-
-                                # Blend the face region to reduce seam artifacts
-                                swapped_rgb = blend_face_region(rgb, swapped_rgb, det["bbox"])
-                                
-                                if req.temporal_smoothing:
-                                    face_history.append(swapped_rgb.copy())
-                                    if len(face_history) > TEMPORAL_SMOOTH_FRAMES:
-                                        face_history.pop(0)
+                                swapped_rgb = soften_swap_edges(rgb, swapped_rgb, orig_bbox)
                                         
                             except Exception as e:
                                 print(f"Track-based face swap failed for frame {frame_idx}: {e}")
