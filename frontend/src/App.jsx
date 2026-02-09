@@ -14,6 +14,7 @@ import Recorder from './components/Recorder/Recorder';
 import ShareDialog from './components/Share/ShareDialog';
 import MorphWizard from './components/Morph/MorphWizard';
 import PreferencesDialog from './components/Preferences/PreferencesDialog';
+import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
 
@@ -77,6 +78,14 @@ function App() {
       setCurrentTime(start);
     }
   }, [selectedClipId, project.clips]);
+
+  // Pause playback when switching between preview mode and timeline mode
+  useEffect(() => {
+    // When switching modes (selectedAsset changes), pause playback to avoid confusion
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [selectedAsset?.id]); // Only trigger when the selected asset ID changes (switching modes)
 
   // Layout state
   const [timelineHeight, setTimelineHeight] = useState(300); // Initial height in pixels
@@ -439,11 +448,14 @@ function App() {
               addClip(assetData, null);
             } catch (err) {
               console.error('Upload recording failed:', err);
-              alert('Failed to upload recording');
+              // Error toast will be shown by axios interceptor
             }
           }}
         />
       )}
+      
+      {/* Toast notifications for errors */}
+      <ToastContainer />
     </div>
   );
 }

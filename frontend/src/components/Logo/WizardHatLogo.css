@@ -1,0 +1,240 @@
+/* Wizard Hat Logo — dark fantasy wizard magic animation */
+
+.wizard-hat-logo {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Intro: logo scales in from center with magical appearance */
+.wizard-hat-logo--animated {
+  animation: wizard-hat-intro 2.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+             wizard-hat-pulse 0.6s ease-out 2.2s forwards;
+}
+
+@keyframes wizard-hat-intro {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(-10px);
+  }
+  20% {
+    opacity: 0.8;
+    transform: scale(1.05) translateY(0);
+  }
+  40% {
+    transform: scale(0.98) translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Hat materializes with fade-in */
+.wizard-hat-logo--animated .wizard-hat-logo__hat {
+  opacity: 0;
+  animation: wizard-hat-materialize 0.8s ease-out 0.3s forwards;
+}
+
+@keyframes wizard-hat-materialize {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Brim appears after hat */
+.wizard-hat-logo--animated .wizard-hat-logo__brim {
+  opacity: 0;
+  animation: wizard-hat-brim-appear 0.6s ease-out 0.5s forwards;
+}
+
+@keyframes wizard-hat-brim-appear {
+  0% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/* Highlight shines across hat */
+.wizard-hat-logo--animated .wizard-hat-logo__highlight {
+  opacity: 0;
+  animation: wizard-hat-highlight-sweep 1s ease-out 0.7s forwards,
+             wizard-hat-highlight-shimmer 3s ease-in-out 2s infinite;
+}
+
+@keyframes wizard-hat-highlight-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 0.6;
+    transform: translateX(0);
+  }
+}
+
+@keyframes wizard-hat-highlight-shimmer {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Band appears with glow */
+.wizard-hat-logo--animated .wizard-hat-logo__band {
+  opacity: 0;
+  animation: wizard-hat-band-glow 0.5s ease-out 1s forwards;
+}
+
+@keyframes wizard-hat-band-glow {
+  0% {
+    opacity: 0;
+    filter: brightness(0.5);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+}
+
+/* Glow fades in and breathes */
+.wizard-hat-logo--animated .wizard-hat-logo__glow {
+  opacity: 0;
+  animation: wizard-hat-glow-in 1.2s ease-out 0.4s forwards,
+             wizard-hat-glow-breathe 3.5s ease-in-out 2.5s infinite;
+}
+
+@keyframes wizard-hat-glow-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+}
+
+@keyframes wizard-hat-glow-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.05);
+  }
+}
+
+/* Stars sparkle around the hat */
+.wizard-hat-logo--animated .wizard-hat-logo__star {
+  opacity: 0;
+  animation: wizard-hat-star-sparkle 0.4s ease-out forwards,
+             wizard-hat-star-twinkle 2s ease-in-out infinite;
+}
+
+@keyframes wizard-hat-star-sparkle {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes wizard-hat-star-twinkle {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Particles orbit around hat */
+.wizard-hat-logo--animated .wizard-hat-logo__particle {
+  opacity: 0;
+  transform-origin: 32px 32px;
+  animation: wizard-hat-particle-orbit 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards,
+             wizard-hat-particle-fade 0.8s ease-out 1.8s forwards;
+}
+
+@keyframes wizard-hat-particle-orbit {
+  0% {
+    opacity: 0;
+    transform: rotate(0deg) scale(0.5);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.8;
+    transform: rotate(180deg) scale(1);
+  }
+}
+
+@keyframes wizard-hat-particle-fade {
+  to {
+    opacity: 0.3;
+  }
+}
+
+/* Pulse effect after intro */
+@keyframes wizard-hat-pulse {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: brightness(1.4) drop-shadow(0 0 14px rgba(167, 139, 250, 0.8));
+  }
+  100% {
+    filter: brightness(1) drop-shadow(0 0 8px rgba(167, 139, 250, 0.3));
+  }
+}
+
+/* Non-animated: show final state */
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__hat {
+  opacity: 1;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__brim {
+  opacity: 1;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__highlight {
+  opacity: 0.5;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__band {
+  opacity: 1;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__glow {
+  opacity: 0.35;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__star {
+  opacity: 0.8;
+}
+
+.wizard-hat-logo:not(.wizard-hat-logo--animated) .wizard-hat-logo__particle {
+  opacity: 0.3;
+}

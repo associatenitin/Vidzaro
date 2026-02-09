@@ -10,8 +10,10 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [thumbnails, setThumbnails] = useState([]);
   const [waveformUrl, setWaveformUrl] = useState(null);
   const settingsPanelRef = useRef(null);
+  const clipContainerRef = useRef(null);
   const [isHoveringSettings, setIsHoveringSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [panelPosition, setPanelPosition] = useState({ top: '-1px', left: '8px', transform: 'none' });
 
   const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
@@ -123,6 +125,92 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     setShowSettings((prev) => !prev);
   };
 
+  // Calculate panel position to avoid viewport overflow
+  useEffect(() => {
+    if (!showSettings || !settingsPanelRef.current || !clipContainerRef.current) return;
+
+    const updatePanelPosition = () => {
+      const panel = settingsPanelRef.current;
+      const clipContainer = clipContainerRef.current;
+      if (!panel || !clipContainer) return;
+
+      const clipRect = clipContainer.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      // Panel dimensions (w-56 = 224px, plus padding)
+      const panelWidth = 224; // w-56 = 14rem = 224px
+      const panelHeight = panelRect.height || 300; // Approximate, will be measured
+
+      let top = '-1px';
+      let left = '8px';
+      let transform = 'none';
+
+      // Check horizontal overflow
+      const clipRight = clipRect.right;
+      const spaceOnRight = viewportWidth - clipRight;
+      const spaceOnLeft = clipRect.left;
+
+      if (spaceOnRight < panelWidth && spaceOnLeft > panelWidth) {
+        // Not enough space on right, but enough on left - flip to left side
+        left = 'auto';
+        transform = 'translateX(-100%)';
+      } else if (spaceOnRight < panelWidth && spaceOnLeft < panelWidth) {
+        // Not enough space on either side - center it or align to viewport edge
+        if (clipRect.left + clipRect.width / 2 < viewportWidth / 2) {
+          // Clip is on left side, align panel to left edge of viewport
+          left = `${-clipRect.left + 8}px`;
+        } else {
+          // Clip is on right side, align panel to right edge
+          left = 'auto';
+          transform = `translateX(calc(-100% + ${viewportWidth - clipRect.right - 8}px))`;
+        }
+      }
+
+      // Check vertical overflow
+      const clipTop = clipRect.top;
+      const clipBottom = clipRect.bottom;
+      const spaceAbove = clipTop;
+      const spaceBelow = viewportHeight - clipBottom;
+
+      if (spaceBelow < panelHeight && spaceAbove > panelHeight) {
+        // Not enough space below, but enough above - flip above
+        top = 'auto';
+        transform = transform === 'none' 
+          ? 'translateY(-100%)' 
+          : `${transform} translateY(-100%)`;
+      } else if (spaceBelow < panelHeight && spaceAbove < panelHeight) {
+        // Not enough space on either side - position relative to viewport
+        if (clipTop + clipRect.height / 2 < viewportHeight / 2) {
+          // Clip is in upper half, align panel to top of viewport
+          top = `${-clipTop + 8}px`;
+        } else {
+          // Clip is in lower half, align panel to bottom of viewport
+          top = 'auto';
+          const bottomOffset = viewportHeight - clipBottom + 8;
+          transform = transform === 'none'
+            ? `translateY(calc(-100% + ${bottomOffset}px))`
+            : `${transform} translateY(calc(-100% + ${bottomOffset}px))`;
+        }
+      }
+
+      setPanelPosition({ top, left, transform });
+    };
+
+    // Small delay to ensure panel is rendered and measured
+    setTimeout(updatePanelPosition, 0);
+    
+    // Update on window resize
+    window.addEventListener('resize', updatePanelPosition);
+    window.addEventListener('scroll', updatePanelPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePanelPosition);
+      window.removeEventListener('scroll', updatePanelPosition, true);
+    };
+  }, [showSettings]); // Only depend on showSettings; position updates happen via getBoundingClientRect
+
   // Close settings when clicking outside the panel (e.g. on the clip thumbnail or elsewhere)
   useEffect(() => {
     if (!showSettings) return;
@@ -144,7 +232,10 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node);
+        clipContainerRef.current = node;
+      }}
       style={style}
       className={`absolute top-2 bottom-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : ''}`}
       {...attributes}
@@ -229,7 +320,13 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       {/* Filter, Audio & Speed controls - visible on right-click only - positioned outside clip container */}
       <div
         ref={settingsPanelRef}
-        className={`absolute -top-1 left-2 pointer-events-auto transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        style={{
+          top: panelPosition.top,
+          left: panelPosition.left,
+          transform: panelPosition.transform,
+          bottom: panelPosition.top === 'auto' && !panelPosition.transform.includes('translateY') ? 'auto' : undefined,
+        }}
+        className={`absolute pointer-events-auto transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onMouseEnter={() => setIsHoveringSettings(true)}
         onMouseLeave={() => setIsHoveringSettings(false)}
         onMouseDown={(e) => e.stopPropagation()} // Prevent drag start

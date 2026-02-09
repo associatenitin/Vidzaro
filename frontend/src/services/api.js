@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { showToast } from '../components/Toast';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -8,6 +9,25 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Response interceptor to handle errors globally
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Extract error message from response
+    const errorMessage = error.response?.data?.error 
+      || error.response?.data?.message 
+      || error.message 
+      || 'An error occurred';
+    
+    // Only show toast for non-cancelled requests (user-initiated cancellations shouldn't show errors)
+    if (error.code !== 'ERR_CANCELED') {
+      showToast(errorMessage, 'error', 5000);
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 // Upload video file
 export async function uploadVideo(file, onProgress) {

@@ -318,10 +318,32 @@ export async function exportVideo(projectData, outputPath, tempDir) {
     }
 
     // 2. Build filter complex for final assembly
+    // Parse export options (resolution and quality)
+    const resolution = projectData.options?.resolution || '1080';
+    const quality = projectData.options?.quality || 'medium';
+    
+    // Map resolution to dimensions
+    const resolutionMap = {
+      '1080': { width: 1920, height: 1080 },
+      '720': { width: 1280, height: 720 },
+      '480': { width: 854, height: 480 }
+    };
+    
+    const { width: outputWidth, height: outputHeight } = resolutionMap[resolution] || resolutionMap['1080'];
+    
+    // Map quality to CRF (lower CRF = higher quality)
+    const qualityMap = {
+      'high': 18,
+      'medium': 23,
+      'low': 28
+    };
+    
+    const crf = qualityMap[quality] || qualityMap['medium'];
+    
     // We'll create a black background base first
     const maxEnd = Math.max(...processedClips.map(c => (c.startPos || 0) + ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1)), 1);
 
-    let filterGraph = [`color=s=1920x1080:d=${maxEnd}:c=black[vbase]`, `anullsrc=r=44100:cl=stereo:d=${maxEnd}[abase]`];
+    let filterGraph = [`color=s=${outputWidth}x${outputHeight}:d=${maxEnd}:c=black[vbase]`, `anullsrc=r=44100:cl=stereo:d=${maxEnd}[abase]`];
     let vIn = '[vbase]';
     let aIn = '[abase]';
 
@@ -347,10 +369,14 @@ export async function exportVideo(projectData, outputPath, tempDir) {
     await new Promise((resolve, reject) => {
       finalCommand
         // Use format filter for video and anull for audio to finalize streams
-        .complexFilter(filterGraph.concat([`${vIn}format=yuv420p[vfinal]`, `${aIn}anull[afinal]`]))
+        // Scale to output resolution if needed
+        .complexFilter(filterGraph.concat([
+          `${vIn}scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease,pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2,format=yuv420p[vfinal]`,
+          `${aIn}anull[afinal]`
+        ]))
         .map('[vfinal]')
         .map('[afinal]')
-        .outputOptions(['-c:v libx264', '-preset fast', '-crf 23', '-c:a aac', '-b:a 192k'])
+        .outputOptions(['-c:v libx264', '-preset fast', `-crf ${crf}`, '-c:a aac', '-b:a 192k'])
         .output(outputPath)
         .on('end', resolve)
         .on('error', (err) => reject(new Error(`FFmpeg assembly error: ${err.message}`)))

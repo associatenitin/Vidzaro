@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { getThumbnailUrl, getVideoUrl, getVideoThumbnails } from '../../services/api';
+import { getThumbnailUrl, getVideoUrl, getVideoThumbnails, getWaveformUrl } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 
 export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId, onShare }) {
     const [filter, setFilter] = useState('all'); // all, video, audio, image
     const [thumbnails, setThumbnails] = useState({}); // Map of assetId -> thumbnail URL
+    const [waveforms, setWaveforms] = useState({}); // Map of assetId -> waveform URL
     const [failedThumbnails, setFailedThumbnails] = useState(new Set()); // Track failed thumbnail loads
+    const [failedWaveforms, setFailedWaveforms] = useState(new Set()); // Track failed waveform loads
     const fetchingRef = useRef(new Set()); // Track which assets we're currently fetching
+    const fetchingWaveformsRef = useRef(new Set()); // Track which waveforms we're currently fetching
 
     // Handle file dragging from desktop (HTML5)
     const handleDragOver = (e) => {
@@ -108,6 +111,63 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
         });
     }, [project.assets]); // Re-fetch when assets change
 
+    // Fetch waveforms for audio and video assets
+    useEffect(() => {
+        const audioVideoAssets = (project.assets || []).filter(asset => {
+            const type = asset.type || (asset.filename.match(/\.(mp4|mov|webm)$/i) ? 'video' :
+                asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
+                    asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
+            return type === 'audio' || type === 'video';
+        });
+
+        // Fetch waveforms for assets that don't have one yet
+        audioVideoAssets.forEach(asset => {
+            // Check if we should skip this asset
+            setWaveforms(prevWaveforms => {
+                // Skip if already fetched or currently fetching
+                if (prevWaveforms[asset.id] || fetchingWaveformsRef.current.has(asset.id)) {
+                    return prevWaveforms;
+                }
+                
+                // Check failed waveforms
+                setFailedWaveforms(prevFailed => {
+                    if (prevFailed.has(asset.id)) {
+                        return prevFailed;
+                    }
+                    
+                    // Mark as fetching
+                    fetchingWaveformsRef.current.add(asset.id);
+
+                    // Generate waveform URL (backend expects videoId which is the filename)
+                    const waveformUrl = getWaveformUrl(asset.filename);
+                    
+                    // Pre-load the waveform image to check if it exists
+                    const img = new Image();
+                    img.onload = () => {
+                        setWaveforms(prev => {
+                            if (prev[asset.id]) return prev;
+                            return {
+                                ...prev,
+                                [asset.id]: waveformUrl
+                            };
+                        });
+                        fetchingWaveformsRef.current.delete(asset.id);
+                    };
+                    img.onerror = () => {
+                        // Waveform doesn't exist or failed to load
+                        setFailedWaveforms(prev => new Set(prev).add(asset.id));
+                        fetchingWaveformsRef.current.delete(asset.id);
+                    };
+                    img.src = waveformUrl;
+                    
+                    return prevFailed;
+                });
+                
+                return prevWaveforms;
+            });
+        });
+    }, [project.assets]); // Only depend on project.assets
+
     return (
         <div className="h-full flex flex-col bg-slate-900 border-r border-slate-700">
             {/* Header */}
@@ -174,6 +234,21 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                                             />
                                         ) : (
                                             <span>{type}</span>
+                                        )}
+                                        
+                                        {/* Waveform overlay for audio and video */}
+                                        {(type === 'audio' || type === 'video') && waveforms[asset.id] && !failedWaveforms.has(asset.id) && (
+                                            <div className="absolute inset-0 pointer-events-none opacity-60 mix-blend-screen">
+                                                <img
+                                                    src={waveforms[asset.id]}
+                                                    alt="waveform"
+                                                    className="w-full h-full object-fill"
+                                                    draggable="false"
+                                                    onError={() => {
+                                                        setFailedWaveforms(prev => new Set(prev).add(asset.id));
+                                                    }}
+                                                />
+                                            </div>
                                         )}
                                     </div>
 
