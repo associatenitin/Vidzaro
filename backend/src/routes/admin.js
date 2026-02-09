@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import http from 'http';
+import https from 'https';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,13 +20,24 @@ const deblurServiceDir = path.join(projectRoot, 'deblur-service');
 // PIDs of processes we started (so we can stop them)
 const startedProcesses = { morph: null, deblur: null };
 
-async function checkServiceHealth(url) {
-  try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
+function checkServiceHealth(url) {
+  return new Promise((resolve) => {
+    try {
+      const healthUrl = `${url.replace(/\/$/, '')}/health`;
+      const parsed = new URL(healthUrl);
+      const client = parsed.protocol === 'https:' ? https : http;
+      const req = client.get(healthUrl, (res) => {
+        resolve(res.statusCode >= 200 && res.statusCode < 300);
+      });
+      req.on('error', () => resolve(false));
+      req.setTimeout(3000, () => {
+        req.destroy();
+        resolve(false);
+      });
+    } catch (err) {
+      resolve(false);
+    }
+  });
 }
 
 /**
@@ -33,10 +46,18 @@ async function checkServiceHealth(url) {
  */
 router.get('/services', async (req, res, next) => {
   try {
-    const [morphOk, deblurOk] = await Promise.all([
-      checkServiceHealth(MORPH_SERVICE_URL),
-      checkServiceHealth(DEBLUR_SERVICE_URL),
-    ]);
+    let morphOk = false;
+    let deblurOk = false;
+    try {
+      const [m, d] = await Promise.all([
+        checkServiceHealth(MORPH_SERVICE_URL),
+        checkServiceHealth(DEBLUR_SERVICE_URL),
+      ]);
+      morphOk = m;
+      deblurOk = d;
+    } catch (e) {
+      console.warn('[ADMIN] Health check error:', e.message);
+    }
 
     res.json({
       backend: { status: 'running', message: 'This server is running.' },
@@ -52,6 +73,7 @@ router.get('/services', async (req, res, next) => {
       },
     });
   } catch (err) {
+    console.error('[ADMIN] GET /services error:', err);
     next(err);
   }
 });
