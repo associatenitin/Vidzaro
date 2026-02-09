@@ -11,6 +11,7 @@ import recordingRoutes from './routes/recordings.js';
 import shareRoutes from './routes/shares.js';
 import morphRoutes from './routes/morph.js';
 import deblurRoutes from './routes/deblur.js';
+import wanRoutes from './routes/wan.js';
 import adminRoutes from './routes/admin.js';
 import { errorHandler } from './utils/errorHandler.js';
 
@@ -39,6 +40,7 @@ app.use('/api/recordings', recordingRoutes);
 app.use('/api/shares', shareRoutes);
 app.use('/api/morph', morphRoutes);
 app.use('/api/deblur', deblurRoutes);
+app.use('/api/wan', wanRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Health check

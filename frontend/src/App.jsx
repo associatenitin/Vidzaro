@@ -16,6 +16,7 @@ import MorphWizard from './components/Morph/MorphWizard';
 import PreferencesDialog from './components/Preferences/PreferencesDialog';
 import AdminPanel from './components/Admin/AdminPanel';
 import EnhanceDialog from './components/Deblur/EnhanceDialog';
+import GenAIDialog from './components/GenAI/GenAIDialog';
 import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
@@ -62,6 +63,8 @@ function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showEnhanceDialog, setShowEnhanceDialog] = useState(false);
   const [enhanceDialogAsset, setEnhanceDialogAsset] = useState(null);
+  const [showGenAIDialog, setShowGenAIDialog] = useState(false);
+  const [genAIProgress, setGenAIProgress] = useState(null);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
   const [previewTime, setPreviewTime] = useState(0); // Time for the currently previewed asset
@@ -285,6 +288,10 @@ function App() {
     }
   };
 
+  const handleOpenGenAI = () => {
+    setShowGenAIDialog(true);
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -442,6 +449,8 @@ function App() {
             canRedo={canRedo}
             onOpenPreferences={() => setShowPreferences(true)}
             onAIEnhance={handleAIEnhance}
+            onGenAI={handleOpenGenAI}
+            genAIProgress={genAIProgress}
           />
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
             <VideoPlayer
@@ -636,6 +645,22 @@ function App() {
             setShowEnhanceDialog(false);
             setEnhanceDialogAsset(null);
           }}
+        />
+      )}
+
+      {showGenAIDialog && (
+        <GenAIDialog
+          onClose={() => {
+            setShowGenAIDialog(false);
+            setGenAIProgress(null);
+          }}
+          onComplete={(asset) => {
+            addAsset(asset);
+            addClip(asset, null);
+            setShowGenAIDialog(false);
+            setGenAIProgress(null);
+          }}
+          onProgress={setGenAIProgress}
         />
       )}
 

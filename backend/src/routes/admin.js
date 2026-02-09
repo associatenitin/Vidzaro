@@ -13,13 +13,15 @@ const router = express.Router();
 
 const MORPH_SERVICE_URL = process.env.MORPH_SERVICE_URL || 'http://localhost:8000';
 const DEBLUR_SERVICE_URL = process.env.DEBLUR_SERVICE_URL || 'http://localhost:8002';
+const WAN_SERVICE_URL = process.env.WAN_SERVICE_URL || 'http://localhost:8003';
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const morphServiceDir = path.join(projectRoot, 'morph-service');
 const deblurServiceDir = path.join(projectRoot, 'deblur-service');
+const wanServiceDir = path.join(projectRoot, 'wan-service');
 
 // PIDs of processes we started (so we can stop them)
-const startedProcesses = { morph: null, deblur: null };
+const startedProcesses = { morph: null, deblur: null, wan: null };
 
 function getPythonExecutable(serviceDir) {
   const isWindows = process.platform === 'win32';
@@ -77,13 +79,16 @@ router.get('/services', async (req, res, next) => {
   try {
     let morphOk = false;
     let deblurOk = false;
+    let wanOk = false;
     try {
-      const [m, d] = await Promise.all([
+      const [m, d, w] = await Promise.all([
         checkServiceHealth(MORPH_SERVICE_URL),
         checkServiceHealth(DEBLUR_SERVICE_URL),
+        checkServiceHealth(WAN_SERVICE_URL),
       ]);
       morphOk = m;
       deblurOk = d;
+      wanOk = w;
     } catch (e) {
       console.warn('[ADMIN] Health check error:', e.message);
     }
@@ -100,6 +105,11 @@ router.get('/services', async (req, res, next) => {
         url: DEBLUR_SERVICE_URL,
         startedByUs: startedProcesses.deblur !== null,
       },
+      wan: {
+        status: wanOk ? 'running' : 'stopped',
+        url: WAN_SERVICE_URL,
+        startedByUs: startedProcesses.wan !== null,
+      },
     });
   } catch (err) {
     console.error('[ADMIN] GET /services error:', err);
@@ -107,12 +117,25 @@ router.get('/services', async (req, res, next) => {
   }
 });
 
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return false; // ESRCH or similar = process dead
+  }
+}
+
 /**
  * POST /api/admin/services/morph/start
  * Start the Morph service (Python).
  */
 router.post('/services/morph/start', async (req, res, next) => {
   try {
+    if (startedProcesses.morph !== null && !isProcessAlive(startedProcesses.morph)) {
+      startedProcesses.morph = null;
+      console.log('[ADMIN] Cleared stale Morph PID (process no longer running)');
+    }
     if (startedProcesses.morph !== null) {
       return res.status(400).json({ error: 'Morph service was already started by Admin. Stop it first.' });
     }
@@ -177,6 +200,10 @@ router.post('/services/morph/stop', async (req, res, next) => {
  */
 router.post('/services/deblur/start', async (req, res, next) => {
   try {
+    if (startedProcesses.deblur !== null && !isProcessAlive(startedProcesses.deblur)) {
+      startedProcesses.deblur = null;
+      console.log('[ADMIN] Cleared stale Deblur PID (process no longer running)');
+    }
     if (startedProcesses.deblur !== null) {
       return res.status(400).json({ error: 'Deblur service was already started by Admin. Stop it first.' });
     }
@@ -224,6 +251,69 @@ router.post('/services/deblur/stop', async (req, res, next) => {
     console.log(`[ADMIN] Stopped Deblur service (was PID ${pid})`);
 
     res.json({ ok: true, message: 'Deblur service stop requested.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/services/wan/start
+ * Start the Wan Gen AI service (Python).
+ */
+router.post('/services/wan/start', async (req, res, next) => {
+  try {
+    // If we think we started it but the process is dead, clear stale PID
+    if (startedProcesses.wan !== null && !isProcessAlive(startedProcesses.wan)) {
+      startedProcesses.wan = null;
+      console.log('[ADMIN] Cleared stale Wan PID (process no longer running)');
+    }
+    if (startedProcesses.wan !== null) {
+      return res.status(400).json({ error: 'Wan service was already started by Admin. Stop it first.' });
+    }
+
+    const isWindows = process.platform === 'win32';
+    const pythonExe = getPythonExecutable(wanServiceDir);
+    const child = spawn(pythonExe, ['main.py'], {
+      cwd: wanServiceDir,
+      stdio: 'ignore',
+      detached: true,
+      shell: isWindows,
+      env: { ...process.env, WAN_SERVICE_PORT: '8003' },
+    });
+
+    child.unref();
+    startedProcesses.wan = child.pid;
+    console.log(`[ADMIN] Started Wan service (PID ${child.pid}) in ${wanServiceDir}`);
+
+    res.json({ ok: true, pid: child.pid, message: 'Wan Gen AI service start requested.' });
+  } catch (err) {
+    console.error('[ADMIN] Wan start error:', err);
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/services/wan/stop
+ * Stop the Wan service if we started it.
+ */
+router.post('/services/wan/stop', async (req, res, next) => {
+  try {
+    const pid = startedProcesses.wan;
+    if (pid == null) {
+      return res.status(400).json({
+        error: 'Wan service was not started by Admin. Stop it manually (e.g. in the terminal).',
+      });
+    }
+
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch (e) {
+      if (e.code !== 'ESRCH') throw e;
+    }
+    startedProcesses.wan = null;
+    console.log(`[ADMIN] Stopped Wan service (was PID ${pid})`);
+
+    res.json({ ok: true, message: 'Wan Gen AI service stop requested.' });
   } catch (err) {
     next(err);
   }

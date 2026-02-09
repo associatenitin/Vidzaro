@@ -1,4 +1,4 @@
-export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance }) {
+export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -86,6 +86,39 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
           </svg>
           AI Enhance
         </button>
+      )}
+
+      {/* Gen AI Button */}
+      {onGenAI && (
+        <button
+          onClick={onGenAI}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium flex items-center gap-2"
+          title="Generate AI Video (Wan 2.1)"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Gen AI
+        </button>
+      )}
+
+      {/* Gen AI progress indicator */}
+      {genAIProgress && (
+        <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-900/80 rounded-lg border border-slate-600 min-w-[180px]">
+          <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between text-xs mb-0.5">
+              <span className="text-slate-400 truncate">Gen AI</span>
+              <span className="text-emerald-400 font-medium">{Math.round(genAIProgress.progress || 0)}%</span>
+            </div>
+            <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, genAIProgress.progress || 0))}%` }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="flex-1"></div>

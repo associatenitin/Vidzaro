@@ -184,6 +184,39 @@ export async function deblurGetProgress(jobId) {
   return res.data;
 }
 
+// Gen AI (Wan 2.1): start generation
+export async function genAIGenerate(options = {}) {
+  const {
+    mode = 'text-to-video',
+    prompt,
+    negativePrompt,
+    imageId,
+    duration = 5,
+    guidanceScale = 6,
+    useCuda = true,
+    lowVram = false,
+    jobId,
+  } = options;
+  const res = await api.post('/wan/generate', {
+    mode,
+    prompt,
+    negativePrompt,
+    imageId,
+    duration,
+    guidanceScale,
+    useCuda,
+    lowVram,
+    jobId,
+  });
+  return res.data;
+}
+
+// Gen AI (Wan 2.1): poll progress
+export async function genAIGetProgress(jobId) {
+  const res = await api.get(`/wan/progress/${jobId}`);
+  return res.data;
+}
+
 // Admin: get services status
 export async function adminGetServices() {
   const res = await api.get('/admin/services');
@@ -205,6 +238,14 @@ export async function adminDeblurStart() {
 }
 export async function adminDeblurStop() {
   const res = await api.post('/admin/services/deblur/stop');
+  return res.data;
+}
+export async function adminWanStart() {
+  const res = await api.post('/admin/services/wan/start');
+  return res.data;
+}
+export async function adminWanStop() {
+  const res = await api.post('/admin/services/wan/stop');
   return res.data;
 }
 

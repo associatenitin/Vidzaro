@@ -5,6 +5,8 @@ import {
   adminMorphStop,
   adminDeblurStart,
   adminDeblurStop,
+  adminWanStart,
+  adminWanStop,
 } from '../../services/api';
 
 function ServiceCard({ title, status, url, startedByUs, onStart, onStop, loading, actionError }) {
@@ -62,8 +64,8 @@ export default function AdminPanel({ onClose }) {
   const [services, setServices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [actionLoading, setActionLoading] = useState({ morph: false, deblur: false });
-  const [actionError, setActionError] = useState({ morph: null, deblur: null });
+  const [actionLoading, setActionLoading] = useState({ morph: false, deblur: false, wan: false });
+  const [actionError, setActionError] = useState({ morph: null, deblur: null, wan: null });
 
   const fetchServices = useCallback(async () => {
     try {
@@ -136,6 +138,32 @@ export default function AdminPanel({ onClose }) {
     }
   };
 
+  const handleWanStart = async () => {
+    setActionError((prev) => ({ ...prev, wan: null }));
+    setActionLoading((prev) => ({ ...prev, wan: true }));
+    try {
+      await adminWanStart();
+      await fetchServices();
+    } catch (e) {
+      setActionError((prev) => ({ ...prev, wan: e.response?.data?.error || e.message || 'Failed to start' }));
+    } finally {
+      setActionLoading((prev) => ({ ...prev, wan: false }));
+    }
+  };
+
+  const handleWanStop = async () => {
+    setActionError((prev) => ({ ...prev, wan: null }));
+    setActionLoading((prev) => ({ ...prev, wan: true }));
+    try {
+      await adminWanStop();
+      await fetchServices();
+    } catch (e) {
+      setActionError((prev) => ({ ...prev, wan: e.response?.data?.error || e.message || 'Failed to stop' }));
+    } finally {
+      setActionLoading((prev) => ({ ...prev, wan: false }));
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10002]"
@@ -190,6 +218,16 @@ export default function AdminPanel({ onClose }) {
                 onStop={handleDeblurStop}
                 loading={actionLoading.deblur}
                 actionError={actionError.deblur}
+              />
+              <ServiceCard
+                title="Wan Gen AI service"
+                status={services.wan?.status}
+                url={services.wan?.url}
+                startedByUs={services.wan?.startedByUs}
+                onStart={handleWanStart}
+                onStop={handleWanStop}
+                loading={actionLoading.wan}
+                actionError={actionError.wan}
               />
             </div>
           )}
