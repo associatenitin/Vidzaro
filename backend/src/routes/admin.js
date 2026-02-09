@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import http from 'http';
 import https from 'https';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,34 @@ const deblurServiceDir = path.join(projectRoot, 'deblur-service');
 
 // PIDs of processes we started (so we can stop them)
 const startedProcesses = { morph: null, deblur: null };
+
+function getPythonExecutable(serviceDir) {
+  const isWindows = process.platform === 'win32';
+
+  // 1. Check for service-specific .venv
+  const localVenv = isWindows
+    ? path.join(serviceDir, '.venv', 'Scripts', 'python.exe')
+    : path.join(serviceDir, '.venv', 'bin', 'python');
+
+  if (fs.existsSync(localVenv)) {
+    console.log(`[ADMIN] Using local venv python: ${localVenv}`);
+    return localVenv;
+  }
+
+  // 2. Check for project root .venv
+  const rootVenv = isWindows
+    ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+    : path.join(projectRoot, '.venv', 'bin', 'python');
+
+  if (fs.existsSync(rootVenv)) {
+    console.log(`[ADMIN] Using root venv python: ${rootVenv}`);
+    return rootVenv;
+  }
+
+  // 3. Fallback to system python
+  console.log(`[ADMIN] Fallback to system python (${isWindows ? 'python' : 'python3'})`);
+  return isWindows ? 'python' : 'python3';
+}
 
 function checkServiceHealth(url) {
   return new Promise((resolve) => {
@@ -90,8 +119,10 @@ router.post('/services/morph/start', async (req, res, next) => {
 
     const port = new URL(MORPH_SERVICE_URL).port || '8000';
     const isWindows = process.platform === 'win32';
+    const pythonExe = getPythonExecutable(morphServiceDir);
+
     const child = spawn(
-      isWindows ? 'python' : 'python3',
+      pythonExe,
       ['-m', 'uvicorn', 'main:app', '--host', '0.0.0.0', '--port', port],
       {
         cwd: morphServiceDir,
@@ -151,7 +182,8 @@ router.post('/services/deblur/start', async (req, res, next) => {
     }
 
     const isWindows = process.platform === 'win32';
-    const child = spawn(isWindows ? 'python' : 'python3', ['main.py'], {
+    const pythonExe = getPythonExecutable(deblurServiceDir);
+    const child = spawn(pythonExe, ['main.py'], {
       cwd: deblurServiceDir,
       stdio: 'ignore',
       detached: true,

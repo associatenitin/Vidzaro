@@ -13,30 +13,37 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
 
   useEffect(() => {
     setUseCuda(getDeblurUseCuda());
+
+    // Cleanup on unmount
+    return () => {
+      if (window._enhancePollInterval) {
+        clearInterval(window._enhancePollInterval);
+        window._enhancePollInterval = null;
+      }
+    };
   }, []);
 
   const handleEnhance = async () => {
     if (!videoAsset?.filename) return;
-    
+
     setLoading(true);
     setError(null);
     setJobProgress({ progress: 0, status: 'starting' });
 
     const jobId = crypto.randomUUID();
-    let pollInterval = null;
 
     try {
       const useCudaValue = getDeblurUseCuda();
-      
+
       // Start polling and handle completion
-      pollInterval = setInterval(async () => {
+      const interval = setInterval(async () => {
         try {
           const status = await deblurGetProgress(jobId);
           setJobProgress(status);
 
           if (status.status === 'failed' || status.error || status.result?.error) {
-            clearInterval(pollInterval);
-            pollInterval = null;
+            clearInterval(interval);
+            window._enhancePollInterval = null;
             const msg = status.result?.error || status.error || 'Enhancement failed';
             setError(msg);
             setLoading(false);
@@ -44,8 +51,8 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
           }
 
           if (status.status === 'completed' && status.asset) {
-            clearInterval(pollInterval);
-            pollInterval = null;
+            clearInterval(interval);
+            window._enhancePollInterval = null;
             onComplete?.(status.asset);
             onClose?.();
           }
@@ -53,6 +60,8 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
           console.debug('Polling progress...', err.message);
         }
       }, 2000);
+
+      window._enhancePollInterval = interval;
 
       // Trigger the job
       await deblurEnhance(videoAsset.filename, {
@@ -62,7 +71,10 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
       });
 
     } catch (e) {
-      if (pollInterval) clearInterval(pollInterval);
+      if (window._enhancePollInterval) {
+        clearInterval(window._enhancePollInterval);
+        window._enhancePollInterval = null;
+      }
       setError(e.response?.data?.detail || e.response?.data?.error || e.message || 'Enhancement failed');
       setLoading(false);
     }
@@ -76,11 +88,11 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10002]"
-      onClick={onClose}
+      onClick={() => !loading && onClose()}
     >
-      <div 
+      <div
         className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl w-[90vw] max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -136,11 +148,10 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
                   key={mode.value}
                   onClick={() => setQualityMode(mode.value)}
                   disabled={loading}
-                  className={`p-3 rounded border transition-colors ${
-                    qualityMode === mode.value
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-slate-900 border-slate-600 hover:border-blue-500 text-slate-300'
-                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`p-3 rounded border transition-colors ${qualityMode === mode.value
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-slate-900 border-slate-600 hover:border-blue-500 text-slate-300'
+                    } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <div className="font-medium">{mode.label}</div>
                   <div className="text-xs opacity-75">{mode.desc}</div>
@@ -171,28 +182,75 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
           {jobProgress && (
             <div className="bg-slate-900 rounded border border-slate-700 p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-slate-300">
-                  {jobProgress.status === 'starting' && 'Starting...'}
-                  {jobProgress.status === 'loading_model' && 'Loading AI model...'}
-                  {jobProgress.status === 'reading_video' && 'Reading video...'}
-                  {jobProgress.status === 'processing_frames' && 'Processing frames...'}
-                  {jobProgress.status === 'encoding' && 'Encoding video...'}
-                  {jobProgress.status === 'completed' && 'Completed!'}
-                  {jobProgress.status === 'error' && 'Error'}
-                </span>
-                <span className="text-sm text-slate-400">
+                <div className="flex items-center gap-2">
+                  {/* Status Icon */}
+                  {jobProgress.status === 'starting' && (
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  {jobProgress.status === 'loading_model' && (
+                    <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  {(jobProgress.status === 'reading_video' || jobProgress.status === 'processing_frames' || jobProgress.status === 'ffmpeg_processing') && (
+                    <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  {jobProgress.status === 'encoding' && (
+                    <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  {jobProgress.status === 'completed' && (
+                    <div className="text-green-500">✓</div>
+                  )}
+                  {jobProgress.status === 'error' && (
+                    <div className="text-red-500">✗</div>
+                  )}
+
+                  {/* Status Text */}
+                  <span className="text-sm font-medium text-slate-300">
+                    {jobProgress.status === 'starting' && '🚀 Starting...'}
+                    {jobProgress.status === 'queued' && '⏳ Queued...'}
+                    {jobProgress.status === 'loading_model' && '🤖 Loading AI model...'}
+                    {jobProgress.status === 'reading_video' && '📹 Reading video...'}
+                    {jobProgress.status === 'processing_frames' && '✨ AI Processing...'}
+                    {jobProgress.status === 'ffmpeg_processing' && '⚡ Processing...'}
+                    {jobProgress.status === 'encoding' && '🎬 Encoding video...'}
+                    {jobProgress.status === 'completed' && '✅ Completed!'}
+                    {jobProgress.status === 'error' && '❌ Error'}
+                    {!['starting', 'queued', 'loading_model', 'reading_video', 'processing_frames', 'ffmpeg_processing', 'encoding', 'completed', 'error'].includes(jobProgress.status) && jobProgress.status}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold text-blue-400">
                   {Math.round(jobProgress.progress || 0)}%
                 </span>
               </div>
-              <div className="w-full bg-slate-700 rounded-full h-2">
+
+              {/* Progress Bar */}
+              <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
                 <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${jobProgress.progress || 0}%` }}
-                />
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${Math.min(100, Math.max(0, jobProgress.progress || 0))}%` }}
+                >
+                  <div className="h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                </div>
               </div>
-              {jobProgress.result?.frames_processed && (
-                <div className="text-xs text-slate-500 mt-2">
-                  Processed {jobProgress.result.frames_processed} frames
+
+              {/* Detailed Progress Info */}
+              {jobProgress.result && (
+                <div className="mt-3 space-y-1">
+                  {jobProgress.result.frames_processed !== undefined && jobProgress.result.total_frames && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Frames</span>
+                      <span className="text-slate-300 font-medium">
+                        {jobProgress.result.frames_processed} / {jobProgress.result.total_frames}
+                      </span>
+                    </div>
+                  )}
+                  {jobProgress.result.method && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Method</span>
+                      <span className="text-slate-300 font-medium">
+                        {jobProgress.result.method === 'ffmpeg_unsharp' ? '⚡ FFmpeg (Fast)' : '🤖 AI Enhancement'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

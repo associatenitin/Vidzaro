@@ -1,5 +1,5 @@
 """
-Video Deblur service: AI-based video clarity enhancement using RealBasicVSR.
+Video Deblur service: AI-based video clarity enhancement using Real-ESRGAN.
 Endpoints: POST /enhance, GET /progress/:jobId
 """
 import os
@@ -12,6 +12,17 @@ import uuid
 import traceback
 from pathlib import Path
 import logging
+
+# Compatibility patch for torchvision version mismatch
+# basicsr expects torchvision.transforms.functional_tensor but newer versions use _functional_tensor
+try:
+    import torchvision.transforms.functional_tensor
+except (ImportError, ModuleNotFoundError):
+    try:
+        import torchvision.transforms._functional_tensor as functional_tensor
+        sys.modules['torchvision.transforms.functional_tensor'] = functional_tensor
+    except ImportError:
+        pass  # Will handle error during actual import if needed
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Body
 from pydantic import BaseModel
 import cv2
@@ -42,51 +53,76 @@ def update_job_progress(job_id: str, progress: float, status: str = "processing"
         "updated_at": os.times()[4] if hasattr(os, 'times') else 0
     }
 
-# Lazy loading for RealBasicVSR
-_realbasicvsr_model = None
+# Lazy loading for Real-ESRGAN AI model
+_realesrgan_model = None
 
-def get_realbasicvsr():
-    """Lazy load RealBasicVSR model"""
-    global _realbasicvsr_model
-    if _realbasicvsr_model is None:
+def get_ai_enhancer():
+    """Lazy load Real-ESRGAN model for AI enhancement"""
+    global _realesrgan_model
+    if _realesrgan_model is None:
         try:
-            from realbasicvsr import RealBasicVSR
-            logger.info("Loading RealBasicVSR model...")
-            # Initialize with default settings
-            # RealBasicVSR can be configured for different quality modes
-            _realbasicvsr_model = RealBasicVSR()
-            logger.info("RealBasicVSR model loaded successfully")
-        except ImportError:
-            logger.warning("RealBasicVSR not available, falling back to FFmpeg unsharp")
+            from realesrgan import RealESRGANer
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            import torch
+            
+            logger.info("Loading Real-ESRGAN AI model...")
+            
+            # Determine device (CUDA or CPU)
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            logger.info(f"Using device: {device}")
+            
+            # Initialize RRDBNet model (x4 upscaling)
+            model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+            
+            # Initialize Real-ESRGAN upsampler
+            upsampler = RealESRGANer(
+                scale=4,
+                model_path='https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
+                model=model,
+                tile=0,  # No tiling for better quality
+                tile_pad=10,
+                pre_pad=0,
+                half=device.type == 'cuda',  # Use FP16 on GPU for speed
+                device=device
+            )
+            
+            _realesrgan_model = upsampler
+            logger.info("Real-ESRGAN model loaded successfully")
+            return upsampler
+            
+        except ImportError as e:
+            logger.warning(f"Real-ESRGAN not available: {e}. Falling back to FFmpeg unsharp")
             return None
         except Exception as e:
-            logger.error(f"Failed to load RealBasicVSR: {e}")
+            logger.error(f"Failed to load Real-ESRGAN: {e}")
             return None
-    return _realbasicvsr_model
+    return _realesrgan_model
 
 def enhance_frame_with_ai(frame, model, quality_mode="balanced"):
-    """Enhance a single frame using RealBasicVSR"""
+    """Enhance a single frame using Real-ESRGAN AI"""
     try:
         if model is None:
             # Fallback to simple sharpening if model not available
             return apply_unsharp_fallback(frame)
         
-        # Convert BGR to RGB for RealBasicVSR
+        # Convert BGR to RGB for Real-ESRGAN
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # RealBasicVSR expects input in specific format
-        # Process frame through model
-        enhanced = model.enhance(rgb_frame)
+        # Real-ESRGAN enhancement
+        # Returns (output, _) where output is the enhanced image
+        enhanced, _ = model.enhance(rgb_frame, outscale=1.0)  # outscale=1 keeps original size
         
-        # Convert back to BGR
-        if len(enhanced.shape) == 3:
-            enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_RGB2BGR)
-        else:
-            enhanced_bgr = enhanced
+        # Convert back to BGR for OpenCV
+        enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_RGB2BGR)
+        
+        # Resize back to original size if needed
+        if enhanced_bgr.shape[:2] != frame.shape[:2]:
+            enhanced_bgr = cv2.resize(enhanced_bgr, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_LANCZOS4)
         
         return enhanced_bgr
     except Exception as e:
         logger.error(f"AI enhancement failed: {e}")
+        logger.exception("Detailed error:")
         # Fallback to unsharp
         return apply_unsharp_fallback(frame)
 
@@ -141,10 +177,10 @@ def _do_enhance(job_id: str, req: EnhanceRequest):
         logger.info(f"Starting enhancement for {video_path} (quality: {req.quality_mode})")
         update_job_progress(job_id, 5, "loading_model")
         
-        # Load model
-        model = get_realbasicvsr()
+        # Load AI model
+        model = get_ai_enhancer()
         if model is None:
-            logger.warning("RealBasicVSR not available, using FFmpeg unsharp filter")
+            logger.warning("Real-ESRGAN not available, using FFmpeg unsharp filter")
             # Fallback to FFmpeg-based enhancement
             _do_ffmpeg_enhance(job_id, req)
             return

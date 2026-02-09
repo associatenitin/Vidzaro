@@ -1,28 +1,20 @@
 # Video Deblur service - AI-based video clarity enhancement
 # Python 3.10+
 
-# RealBasicVSR for video restoration and deblurring
-realbasicvsr>=1.0.0
+# Real-ESRGAN for AI-based video/image enhancement (easier to install than RealBasicVSR)
+realesrgan>=0.3.0
 basicsr>=1.4.2
 
 # OpenCV for video processing
-opencv-python-headless>=4.13.0.92
-numpy>=2.3.5
+opencv-python-headless>=4.8.0
+numpy>=1.23.0
 
-# PyTorch with CUDA support (optional, falls back to CPU)
-torch==2.6.0+cu124
-torchvision==0.21.0+cu124
+# PyTorch with CUDA support (falls back to CPU if CUDA unavailable)
+torch>=2.0.0
+torchvision>=0.15.0
 
-# CUDA 12 libs via pip (no full CUDA Toolkit install needed)
-nvidia-cublas-cu12>=12.4.0
-nvidia-cudnn-cu12>=9.0.0
-nvidia-cufft-cu12>=11.0.0
-nvidia-curand-cu12>=10.0.0
-nvidia-cusolver-cu12>=11.0.0
-nvidia-cusparse-cu12>=12.0.0
-nvidia-cuda-runtime-cu12>=12.0.0
-nvidia-cuda-nvrtc-cu12>=12.0.0
-nvidia-nvjitlink-cu12>=12.0.0
+# Pillow for image processing
+Pillow>=9.5.0
 
 # API
 fastapi>=0.115.0
