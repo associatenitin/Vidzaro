@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
@@ -121,6 +121,12 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
 
   const handleContextMenu = (e) => {
+    // If this clip is part of a multi-selection, allow event to bubble to Timeline
+    // The Timeline component will handle multi-selection context menu
+    if (isMultiSelected) {
+      // Don't prevent default or stop propagation - let it bubble to track handler
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     // Store the click position for panel positioning
@@ -230,14 +236,22 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       className={`absolute top-2 bottom-2 cursor-move group ${isResizing ? 'cursor-ew-resize' : ''}`}
       {...attributes}
       {...(isHoveringSettings || showSettings ? {} : listeners)}
-      onContextMenu={handleContextMenu}
+      onContextMenu={(e) => {
+        // If this clip is part of a multi-selection, allow event to bubble to Timeline
+        if (isMultiSelected) {
+          // Don't prevent default or stop propagation - let it bubble to track handler
+          return;
+        }
+        handleContextMenu(e);
+      }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect && onSelect();
+        const isMultiSelect = e.ctrlKey || e.metaKey;
+        onSelect && onSelect(isMultiSelect);
       }}
     >
       {/* Clip container with overflow-hidden for content */}
-      <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden transition-all ${isSelected
+      <div className={`absolute inset-0 bg-slate-700/80 backdrop-blur rounded border-2 overflow-hidden transition-all ${isSelected || isMultiSelected
         ? 'border-cyan-400 ring-2 ring-cyan-400/50 shadow-lg shadow-cyan-500/30'
         : clip.filter
           ? 'border-yellow-500'

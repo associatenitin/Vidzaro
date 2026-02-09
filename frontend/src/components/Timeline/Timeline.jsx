@@ -3,6 +3,10 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import Clip from './Clip';
 import Transition from './Transition';
+import ContextMenu from './ContextMenu';
+import AssetPicker from './AssetPicker';
+import InputDialog from './InputDialog';
+import FilterDialog from './FilterDialog';
 
 const PIXELS_PER_SECOND = 50; // Base zoom level
 
@@ -17,10 +21,17 @@ export default function Timeline({
   onDropAsset,
   onDetachAudio,
   activeTool,
-  selectedClipId,
+  selectedClipIds,
   onClipSelect,
   onAddTrack,
-  onRemoveTrack
+  onRemoveTrack,
+  clipboard,
+  onPasteClips,
+  onCopyClips,
+  onRemoveMultipleClips,
+  onUpdateMultipleClips,
+  onAlignClips,
+  onSplitAtPlayhead
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -29,6 +40,10 @@ export default function Timeline({
   const [dragOverTrackId, setDragOverTrackId] = useState(null);
   const trackRefs = useRef({});
   const dropHandledRef = useRef(false); // Prevent duplicate drops
+  const [contextMenu, setContextMenu] = useState(null);
+  const [assetPicker, setAssetPicker] = useState(null);
+  const [inputDialog, setInputDialog] = useState(null);
+  const [filterDialog, setFilterDialog] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -369,6 +384,204 @@ export default function Timeline({
     const x = e.clientX - rect.left;
     const time = (x / (PIXELS_PER_SECOND * zoom));
     onTimeUpdate(Math.max(0, Math.min(time, totalDuration)));
+    // Deselect clips when clicking on empty timeline (only if not multi-selecting)
+    if (!e.ctrlKey && !e.metaKey) {
+      onClipSelect && onClipSelect(null);
+    }
+  };
+
+  const handleEmptyTimelineContextMenu = (e, trackId, time) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const menuItems = [
+      {
+        label: 'Add clip at position',
+        icon: '➕',
+        onClick: () => {
+          // Open asset picker modal
+          const track = tracks.find(t => t.id === trackId);
+          setAssetPicker({
+            trackId,
+            time,
+            trackType: track?.type || 'video'
+          });
+        }
+      },
+      {
+        label: 'Split at playhead',
+        icon: '✂️',
+        onClick: () => {
+          if (onSplitAtPlayhead) {
+            onSplitAtPlayhead(trackId, currentTime);
+          }
+        },
+        disabled: !onSplitAtPlayhead || Math.abs(currentTime - time) > 0.1
+      },
+      { separator: true },
+      {
+        label: 'Add Video Track',
+        icon: '🎬',
+        onClick: () => {
+          onAddTrack && onAddTrack('video');
+        }
+      },
+      {
+        label: 'Add Audio Track',
+        icon: '🔊',
+        onClick: () => {
+          onAddTrack && onAddTrack('audio');
+        }
+      }
+    ];
+
+    if (clipboard && clipboard.clips && clipboard.clips.length > 0) {
+      menuItems.push({ separator: true });
+      menuItems.push({
+        label: `Paste ${clipboard.clips.length} clip${clipboard.clips.length > 1 ? 's' : ''}`,
+        icon: '📋',
+        shortcut: 'Ctrl+V',
+        onClick: () => {
+          if (onPasteClips) {
+            onPasteClips({ track: trackId, time });
+          }
+        }
+      });
+    }
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: menuItems
+    });
+  };
+
+  const handleMultiSelectContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (selectedClipIds.length < 2) return;
+
+    const menuItems = [
+      {
+        label: `Delete ${selectedClipIds.length} clips`,
+        icon: '🗑️',
+        shortcut: 'Del',
+        onClick: () => {
+          if (onRemoveMultipleClips) {
+            onRemoveMultipleClips(selectedClipIds);
+          }
+        }
+      },
+      {
+        label: `Copy ${selectedClipIds.length} clips`,
+        icon: '📋',
+        shortcut: 'Ctrl+C',
+        onClick: () => {
+          if (onCopyClips) {
+            onCopyClips(selectedClipIds);
+          }
+        }
+      },
+      { separator: true },
+      {
+        label: 'Apply filter to all',
+        icon: '🎨',
+        onClick: () => {
+          // Get current filter from first selected clip
+          const firstClip = sortedClips.find(c => selectedClipIds.includes(c.id));
+          const currentFilter = firstClip?.filter || '';
+          
+          setFilterDialog({
+            title: `Apply Filter to ${selectedClipIds.length} Clips`,
+            value: currentFilter,
+            onConfirm: (filterValue) => {
+              if (onUpdateMultipleClips) {
+                onUpdateMultipleClips(selectedClipIds, { filter: filterValue });
+              }
+            }
+          });
+        }
+      },
+      { separator: true },
+      {
+        label: 'Align to start',
+        icon: '⬅️',
+        onClick: () => {
+          if (onAlignClips) {
+            onAlignClips(selectedClipIds, 'start');
+          }
+        }
+      },
+      {
+        label: 'Align to end',
+        icon: '➡️',
+        onClick: () => {
+          if (onAlignClips) {
+            onAlignClips(selectedClipIds, 'end');
+          }
+        }
+      },
+      { separator: true },
+      {
+        label: 'Set volume for all',
+        icon: '🔊',
+        onClick: () => {
+          // Get average volume of selected clips, or default to 1
+          const selectedClips = sortedClips.filter(c => selectedClipIds.includes(c.id));
+          const avgVolume = selectedClips.length > 0
+            ? selectedClips.reduce((sum, c) => sum + (c.volume || 1), 0) / selectedClips.length
+            : 1;
+          
+          setInputDialog({
+            title: `Set Volume for ${selectedClipIds.length} Clips`,
+            label: 'Volume Level',
+            value: avgVolume,
+            min: 0,
+            max: 2,
+            step: 0.05,
+            unit: '',
+            onConfirm: (value) => {
+              if (onUpdateMultipleClips) {
+                onUpdateMultipleClips(selectedClipIds, { volume: value });
+              }
+            }
+          });
+        }
+      },
+      {
+        label: 'Set speed for all',
+        icon: '⚡',
+        onClick: () => {
+          // Get average speed of selected clips, or default to 1
+          const selectedClips = sortedClips.filter(c => selectedClipIds.includes(c.id));
+          const avgSpeed = selectedClips.length > 0
+            ? selectedClips.reduce((sum, c) => sum + (c.speed || 1), 0) / selectedClips.length
+            : 1;
+          
+          setInputDialog({
+            title: `Set Speed for ${selectedClipIds.length} Clips`,
+            label: 'Playback Speed',
+            value: avgSpeed,
+            min: 0.25,
+            max: 4,
+            step: 0.25,
+            unit: 'x',
+            onConfirm: (value) => {
+              if (onUpdateMultipleClips) {
+                onUpdateMultipleClips(selectedClipIds, { speed: value });
+              }
+            }
+          });
+        }
+      }
+    ];
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: menuItems
+    });
   };
 
   const formatTime = (seconds) => {
@@ -685,6 +898,34 @@ export default function Timeline({
                       handleDrop(e, track.id, e.currentTarget);
                     }}
                     onDragLeave={handleDragLeave}
+                    onContextMenu={(e) => {
+                      // If we have 2+ clips selected, always show multi-select menu
+                      if (selectedClipIds.length >= 2) {
+                        handleMultiSelectContextMenu(e);
+                        return;
+                      }
+
+                      // Check if click is on empty space (not on a clip)
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const scrollLeft = timelineRef.current?.scrollLeft || 0;
+                      const relativeX = x + scrollLeft;
+                      const time = Math.max(0, relativeX / (PIXELS_PER_SECOND * zoom));
+                      
+                      // Check if click is on a clip
+                      const clickedClip = sortedClips.find(clip => {
+                        if ((clip.track || 0) !== track.id) return false;
+                        const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+                        const clipLeft = (clip.startPos || 0) * PIXELS_PER_SECOND * zoom;
+                        const clipRight = clipLeft + (clipDuration * PIXELS_PER_SECOND * zoom);
+                        return relativeX >= clipLeft && relativeX <= clipRight;
+                      });
+
+                      // If no clip clicked, show empty timeline menu
+                      if (!clickedClip) {
+                        handleEmptyTimelineContextMenu(e, track.id, time);
+                      }
+                    }}
                   >
                     {/* Grid lines inside track */}
                     <div className="absolute inset-0 pointer-events-none">
@@ -706,6 +947,8 @@ export default function Timeline({
                         const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
                         const clipWidth = clipDuration * PIXELS_PER_SECOND * zoom;
                         const clipLeft = (clip.startPos || 0) * PIXELS_PER_SECOND * zoom;
+                        const isSelected = selectedClipIds.includes(clip.id);
+                        const isMultiSelected = selectedClipIds.length > 1 && isSelected;
                         return (
                           <div key={clip.id} className={track.locked ? 'pointer-events-none opacity-70' : ''}>
                             <Clip
@@ -717,8 +960,9 @@ export default function Timeline({
                               onRemove={() => onClipRemove(clip.id)}
                               onDetachAudio={() => onDetachAudio && onDetachAudio(clip.id)}
                               isDragging={draggedClipId === clip.id}
-                              isSelected={selectedClipId === clip.id}
-                              onSelect={() => onClipSelect && onClipSelect(clip.id)}
+                              isSelected={isSelected && selectedClipIds.length === 1}
+                              isMultiSelected={isMultiSelected}
+                              onSelect={(isMultiSelect) => onClipSelect && onClipSelect(clip.id, isMultiSelect)}
                             />
                           </div>
                         );
@@ -776,6 +1020,57 @@ export default function Timeline({
           </DndContext>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Asset Picker Modal */}
+      {assetPicker && (
+        <AssetPicker
+          project={project}
+          trackType={assetPicker.trackType}
+          onSelect={(asset) => {
+            if (onDropAsset) {
+              onDropAsset(asset, { track: assetPicker.trackId, time: assetPicker.time });
+            }
+            setAssetPicker(null);
+          }}
+          onClose={() => setAssetPicker(null)}
+        />
+      )}
+
+      {/* Input Dialog Modal */}
+      {inputDialog && (
+        <InputDialog
+          title={inputDialog.title}
+          label={inputDialog.label}
+          value={inputDialog.value}
+          min={inputDialog.min}
+          max={inputDialog.max}
+          step={inputDialog.step}
+          unit={inputDialog.unit}
+          isTextInput={inputDialog.isTextInput}
+          onConfirm={inputDialog.onConfirm}
+          onClose={() => setInputDialog(null)}
+        />
+      )}
+
+      {/* Filter Dialog Modal */}
+      {filterDialog && (
+        <FilterDialog
+          title={filterDialog.title}
+          value={filterDialog.value}
+          onConfirm={filterDialog.onConfirm}
+          onClose={() => setFilterDialog(null)}
+        />
+      )}
     </div>
   );
 }
