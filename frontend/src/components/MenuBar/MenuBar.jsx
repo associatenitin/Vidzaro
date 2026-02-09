@@ -42,7 +42,7 @@ function Menu({ label, children, open, onOpen, onClose }) {
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full mt-0.5 min-w-[200px] py-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-50"
+          className="absolute left-0 top-full mt-0.5 min-w-[200px] py-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-[100]"
           role="menu"
         >
           {children}

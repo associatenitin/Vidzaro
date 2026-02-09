@@ -6,7 +6,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
   };
 
   return (
-    <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center gap-4">
+    <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center gap-4 relative z-10">
       <button
         onClick={() => onPlayPause(!isPlaying)}
         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium flex items-center gap-2"

@@ -266,7 +266,7 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
       {/* Menu bar & header */}
-      <header className="relative overflow-hidden bg-slate-800 border-b border-slate-700 px-4 py-0 flex-shrink-0 h-12 flex items-center gap-6">
+      <header className="relative overflow-visible bg-slate-800 border-b border-slate-700 px-4 py-0 flex-shrink-0 h-12 flex items-center gap-6 z-20">
         <ArcaneMistBg />
         <div className="relative z-10 flex items-center gap-6 flex-1 min-w-0">
           <HeaderBrand />
