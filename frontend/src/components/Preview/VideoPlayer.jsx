@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVideoUrl } from '../../services/api';
+import { convertFilterToCSS } from '../../utils/filterUtils';
 
 export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
   const videoRef = useRef(null);
@@ -601,22 +602,7 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
   }, [registerDisplaySource, isImage]);
 
   const getFilterStyle = (filter) => {
-    switch (filter) {
-      case 'grayscale': return 'grayscale(100%)';
-      case 'sepia': return 'sepia(100%)';
-      case 'invert': return 'invert(100%)';
-      case 'blur': return 'blur(3px)';
-      case 'brightness': return 'brightness(1.3)';
-      case 'darken': return 'brightness(0.7)';
-      case 'contrast': return 'contrast(1.5)';
-      case 'saturate': return 'saturate(1.8)';
-      case 'desaturate': return 'saturate(0.3)';
-      case 'hue-rotate': return 'hue-rotate(90deg)';
-      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
-      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
-      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
-      default: return 'none';
-    }
+    return convertFilterToCSS(filter);
   };
 
   // Sync video playback with timeline
@@ -684,22 +670,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
   const toVideoUrl = getVideoUrl(toClip.videoId);
 
   const getFilterStyle = (filter) => {
-    switch (filter) {
-      case 'grayscale': return 'grayscale(100%)';
-      case 'sepia': return 'sepia(100%)';
-      case 'invert': return 'invert(100%)';
-      case 'blur': return 'blur(3px)';
-      case 'brightness': return 'brightness(1.3)';
-      case 'darken': return 'brightness(0.7)';
-      case 'contrast': return 'contrast(1.5)';
-      case 'saturate': return 'saturate(1.8)';
-      case 'desaturate': return 'saturate(0.3)';
-      case 'hue-rotate': return 'hue-rotate(90deg)';
-      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
-      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
-      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
-      default: return 'none';
-    }
+    return convertFilterToCSS(filter);
   };
 
   // Calculate transition styles based on type
@@ -868,22 +839,7 @@ function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, pr
   }, [registerDisplaySource, isImage]);
 
   const getFilterStyle = (filter) => {
-    switch (filter) {
-      case 'grayscale': return 'grayscale(100%)';
-      case 'sepia': return 'sepia(100%)';
-      case 'invert': return 'invert(100%)';
-      case 'blur': return 'blur(3px)';
-      case 'brightness': return 'brightness(1.3)';
-      case 'darken': return 'brightness(0.7)';
-      case 'contrast': return 'contrast(1.5)';
-      case 'saturate': return 'saturate(1.8)';
-      case 'desaturate': return 'saturate(0.3)';
-      case 'hue-rotate': return 'hue-rotate(90deg)';
-      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
-      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
-      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
-      default: return 'none';
-    }
+    return convertFilterToCSS(filter);
   };
 
   useEffect(() => {

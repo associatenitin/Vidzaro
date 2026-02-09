@@ -7,6 +7,8 @@ import ContextMenu from './ContextMenu';
 import AssetPicker from './AssetPicker';
 import InputDialog from './InputDialog';
 import FilterDialog from './FilterDialog';
+import FilterEditor from '../Filter/FilterEditor';
+import { convertFilterToString } from '../../utils/filterUtils';
 
 const PIXELS_PER_SECOND = 50; // Base zoom level
 
@@ -31,7 +33,10 @@ export default function Timeline({
   onRemoveMultipleClips,
   onUpdateMultipleClips,
   onAlignClips,
-  onSplitAtPlayhead
+  onSplitAtPlayhead,
+  onSaveCustomFilter,
+  onDeleteCustomFilter,
+  onUpdateCustomFilter
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -44,6 +49,7 @@ export default function Timeline({
   const [assetPicker, setAssetPicker] = useState(null);
   const [inputDialog, setInputDialog] = useState(null);
   const [filterDialog, setFilterDialog] = useState(null);
+  const [filterEditor, setFilterEditor] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -495,9 +501,50 @@ export default function Timeline({
           setFilterDialog({
             title: `Apply Filter to ${selectedClipIds.length} Clips`,
             value: currentFilter,
+            project: project,
+            selectedClipIds: selectedClipIds,
             onConfirm: (filterValue) => {
               if (onUpdateMultipleClips) {
                 onUpdateMultipleClips(selectedClipIds, { filter: filterValue });
+              }
+            },
+            onSavePreset: (preset) => {
+              if (onSaveCustomFilter) {
+                onSaveCustomFilter(preset);
+              }
+            },
+            onDeletePreset: (presetId) => {
+              if (onDeleteCustomFilter) {
+                onDeleteCustomFilter(presetId);
+              }
+            },
+            onUpdatePreset: (presetId, updates) => {
+              if (onUpdateCustomFilter) {
+                onUpdateCustomFilter(presetId, updates);
+              }
+            }
+          });
+        }
+      },
+      {
+        label: 'Create custom filter',
+        icon: '✨',
+        onClick: () => {
+          setFilterEditor({
+            initialFilter: null,
+            selectedClipIds: selectedClipIds,
+            onApply: (filterObj) => {
+              // Convert to string if simple, otherwise keep as object
+              const filterString = convertFilterToString(filterObj);
+              const finalFilter = filterString || filterObj;
+              if (onUpdateMultipleClips) {
+                onUpdateMultipleClips(selectedClipIds, { filter: finalFilter });
+              }
+              setFilterEditor(null);
+            },
+            onSavePreset: (preset) => {
+              if (onSaveCustomFilter) {
+                onSaveCustomFilter(preset);
               }
             }
           });
@@ -963,6 +1010,24 @@ export default function Timeline({
                               isSelected={isSelected && selectedClipIds.length === 1}
                               isMultiSelected={isMultiSelected}
                               onSelect={(isMultiSelect) => onClipSelect && onClipSelect(clip.id, isMultiSelect)}
+                              project={project}
+                              onOpenFilterEditor={(currentFilter) => {
+                                setFilterEditor({
+                                  initialFilter: currentFilter,
+                                  selectedClipIds: [clip.id],
+                                  onApply: (filterObj) => {
+                                    const filterString = convertFilterToString(filterObj);
+                                    const finalFilter = filterString || filterObj;
+                                    onClipUpdate(clip.id, { filter: finalFilter });
+                                    setFilterEditor(null);
+                                  },
+                                  onSavePreset: (preset) => {
+                                    if (onSaveCustomFilter) {
+                                      onSaveCustomFilter(preset);
+                                    }
+                                  }
+                                });
+                              }}
                             />
                           </div>
                         );
@@ -1067,8 +1132,25 @@ export default function Timeline({
         <FilterDialog
           title={filterDialog.title}
           value={filterDialog.value}
+          project={filterDialog.project}
+          selectedClipIds={filterDialog.selectedClipIds}
           onConfirm={filterDialog.onConfirm}
           onClose={() => setFilterDialog(null)}
+          onSavePreset={filterDialog.onSavePreset}
+          onDeletePreset={filterDialog.onDeletePreset}
+          onUpdatePreset={filterDialog.onUpdatePreset}
+        />
+      )}
+
+      {/* Filter Editor Modal */}
+      {filterEditor && (
+        <FilterEditor
+          initialFilter={filterEditor.initialFilter}
+          project={project}
+          selectedClipIds={filterEditor.selectedClipIds}
+          onApply={filterEditor.onApply}
+          onSavePreset={filterEditor.onSavePreset}
+          onClose={() => setFilterEditor(null)}
         />
       )}
     </div>

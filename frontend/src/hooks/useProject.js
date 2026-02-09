@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { convertStringToFilter } from '../utils/filterUtils';
 
 export function useProject() {
   const [project, setProject] = useState({
@@ -7,6 +8,7 @@ export function useProject() {
     name: 'Untitled Project',
     clips: [],
     assets: [], // Media/Workspace assets
+    customFilters: [], // Custom filter presets
     tracks: [
       { id: 0, label: 'Video 1', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
       { id: 1, label: 'Video 2', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
@@ -262,20 +264,33 @@ export function useProject() {
     ];
 
     // Ensure clips have all required fields with defaults
-    const loadedClips = (projectData.clips || []).map(clip => ({
-      ...clip,
-      videoEnabled: clip.videoEnabled !== undefined ? clip.videoEnabled : true,
-      audioEnabled: clip.audioEnabled !== undefined ? clip.audioEnabled : true,
-      volume: clip.volume !== undefined ? clip.volume : 1,
-      speed: clip.speed !== undefined ? clip.speed : 1,
-      trimStart: clip.trimStart !== undefined ? clip.trimStart : 0,
-      trimEnd: clip.trimEnd !== undefined ? clip.trimEnd : clip.endTime || clip.duration || 0,
-      startPos: clip.startPos !== undefined ? clip.startPos : 0,
-      fadeIn: clip.fadeIn !== undefined ? clip.fadeIn : 0,
-      fadeOut: clip.fadeOut !== undefined ? clip.fadeOut : 0,
-      transitionOut: clip.transitionOut !== undefined ? clip.transitionOut : null,
-      transitionIn: clip.transitionIn !== undefined ? clip.transitionIn : null,
-    }));
+    // Also migrate legacy string filters to new structure (but keep as string for backward compatibility)
+    const loadedClips = (projectData.clips || []).map(clip => {
+      // Migrate filter if it's a string and we want to convert it
+      // For now, we'll keep string filters as-is for backward compatibility
+      // but ensure they work with the new system
+      let filter = clip.filter;
+      if (filter && typeof filter === 'string' && filter.trim() !== '') {
+        // Keep as string for now - conversion happens at display/export time
+        // This maintains backward compatibility
+      }
+      
+      return {
+        ...clip,
+        videoEnabled: clip.videoEnabled !== undefined ? clip.videoEnabled : true,
+        audioEnabled: clip.audioEnabled !== undefined ? clip.audioEnabled : true,
+        volume: clip.volume !== undefined ? clip.volume : 1,
+        speed: clip.speed !== undefined ? clip.speed : 1,
+        trimStart: clip.trimStart !== undefined ? clip.trimStart : 0,
+        trimEnd: clip.trimEnd !== undefined ? clip.trimEnd : clip.endTime || clip.duration || 0,
+        startPos: clip.startPos !== undefined ? clip.startPos : 0,
+        fadeIn: clip.fadeIn !== undefined ? clip.fadeIn : 0,
+        fadeOut: clip.fadeOut !== undefined ? clip.fadeOut : 0,
+        transitionOut: clip.transitionOut !== undefined ? clip.transitionOut : null,
+        transitionIn: clip.transitionIn !== undefined ? clip.transitionIn : null,
+        filter: filter || null, // Keep filter as-is (string or object)
+      };
+    });
 
     // Merge loaded data with defaults to ensure all required fields are present
     const loadedProject = {
@@ -283,6 +298,7 @@ export function useProject() {
       name: projectData.name || 'Untitled Project',
       clips: loadedClips,
       assets: projectData.assets || [], // Restore media library assets
+      customFilters: projectData.customFilters || [], // Restore custom filter presets
       tracks: projectData.tracks && projectData.tracks.length > 0
         ? projectData.tracks
         : defaultTracks, // Use saved tracks or defaults
@@ -366,12 +382,53 @@ export function useProject() {
       id: uuidv4(),
       name: 'Untitled Project',
       clips: [],
+      assets: [],
+      customFilters: [],
+      tracks: [
+        { id: 0, label: 'Video 1', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
+        { id: 1, label: 'Video 2', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
+        { id: 2, label: 'Audio 1', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
+        { id: 3, label: 'Audio 2', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
+      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
     setHistory([]);
     setFuture([]);
   }, []);
+
+  const addCustomFilter = useCallback((filterPreset) => {
+    setProjectWithHistory((prev) => {
+      const newPreset = {
+        ...filterPreset,
+        id: filterPreset.id || uuidv4(),
+        createdAt: filterPreset.createdAt || new Date().toISOString(),
+      };
+      return {
+        ...prev,
+        customFilters: [...(prev.customFilters || []), newPreset],
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }, [setProjectWithHistory]);
+
+  const updateCustomFilter = useCallback((filterId, updates) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      customFilters: (prev.customFilters || []).map(filter =>
+        filter.id === filterId ? { ...filter, ...updates, updatedAt: new Date().toISOString() } : filter
+      ),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const removeCustomFilter = useCallback((filterId) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      customFilters: (prev.customFilters || []).filter(filter => filter.id !== filterId),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
 
   // Auto-save to LocalStorage
   useEffect(() => {
@@ -430,6 +487,10 @@ export function useProject() {
     activeTool,
     setActiveTool,
     resetProject,
+    // Custom Filters
+    addCustomFilter,
+    updateCustomFilter,
+    removeCustomFilter,
     // History
     undo,
     redo,

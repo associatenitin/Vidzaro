@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
+import { getFilterDisplayName } from '../../utils/filterUtils';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected, project, onOpenFilterEditor }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
@@ -308,7 +309,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             <span className="bg-black/50 px-1 rounded">{formatDuration(clipDuration)}</span>
             {clip.filter && (
               <span className="bg-yellow-500 text-black px-1 rounded uppercase text-[8px] font-bold">
-                {clip.filter}
+                {getFilterDisplayName(clip.filter, project)}
               </span>
             )}
           </div>
@@ -379,8 +380,34 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
         <div className="flex items-center gap-2">
           <select
-            value={clip.filter || ''}
-            onChange={(e) => onUpdate({ filter: e.target.value || null })}
+            value={
+              !clip.filter ? '' :
+              typeof clip.filter === 'string' ? clip.filter :
+              clip.filter.id || clip.filter.name || ''
+            }
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '__custom__') {
+                // Open filter editor
+                if (onOpenFilterEditor) {
+                  onOpenFilterEditor(clip.filter);
+                }
+                // Reset select to current value
+                e.target.value = clip.filter 
+                  ? (typeof clip.filter === 'string' ? clip.filter : (clip.filter.id || clip.filter.name || ''))
+                  : '';
+              } else if (value === '') {
+                onUpdate({ filter: null });
+              } else {
+                // Check if it's a custom preset
+                const preset = project?.customFilters?.find(f => f.id === value);
+                if (preset) {
+                  onUpdate({ filter: preset });
+                } else {
+                  onUpdate({ filter: value || null });
+                }
+              }
+            }}
             onMouseDown={(e) => e.stopPropagation()}
             className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 flex-1"
           >
@@ -403,6 +430,18 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               <option value="vintage">Vintage</option>
               <option value="cool">Cool Tone</option>
               <option value="warm">Warm Tone</option>
+            </optgroup>
+            {project?.customFilters && project.customFilters.length > 0 && (
+              <optgroup label="Custom Presets">
+                {project.customFilters.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="Actions">
+              <option value="__custom__">Create/Edit Custom Filter...</option>
             </optgroup>
           </select>
 

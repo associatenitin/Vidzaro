@@ -43,7 +43,10 @@ function App() {
     undo,
     redo,
     canUndo,
-    canRedo
+    canRedo,
+    addCustomFilter,
+    updateCustomFilter,
+    removeCustomFilter
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -491,6 +494,9 @@ function App() {
               splitClip(clipsAtPosition[0].id, time);
             }
           }}
+          onSaveCustomFilter={addCustomFilter}
+          onDeleteCustomFilter={removeCustomFilter}
+          onUpdateCustomFilter={updateCustomFilter}
         />
       </div>
 

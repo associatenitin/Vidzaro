@@ -295,10 +295,72 @@ export async function exportVideo(projectData, outputPath, tempDir) {
       }
 
       if (clip.filter) {
-        switch (clip.filter) {
-          case 'grayscale': videoFilters.push('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3'); break;
-          case 'sepia': videoFilters.push('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131'); break;
-          case 'invert': videoFilters.push('negate'); break;
+        // Handle new filter object structure
+        if (typeof clip.filter === 'object' && clip.filter.effects) {
+          const effects = clip.filter.effects.filter(e => e.enabled !== false);
+          
+          // Build FFmpeg filter chain from effects
+          effects.forEach(effect => {
+            switch (effect.type) {
+              case 'grayscale':
+                videoFilters.push('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3');
+                break;
+              case 'sepia':
+                // Adjust sepia intensity based on value (0-100%)
+                const sepiaIntensity = effect.value / 100;
+                videoFilters.push(`colorchannelmixer=.${Math.round(393 * sepiaIntensity)}:.${Math.round(769 * sepiaIntensity)}:.${Math.round(189 * sepiaIntensity)}:0:.${Math.round(349 * sepiaIntensity)}:.${Math.round(686 * sepiaIntensity)}:.${Math.round(168 * sepiaIntensity)}:0:.${Math.round(272 * sepiaIntensity)}:.${Math.round(534 * sepiaIntensity)}:.${Math.round(131 * sepiaIntensity)}`);
+                break;
+              case 'invert':
+                if (effect.value >= 50) {
+                  videoFilters.push('negate');
+                }
+                break;
+              case 'brightness':
+                videoFilters.push(`eq=brightness=${effect.value}`);
+                break;
+              case 'contrast':
+                videoFilters.push(`eq=contrast=${effect.value}`);
+                break;
+              case 'saturate':
+                videoFilters.push(`eq=saturation=${effect.value}`);
+                break;
+              case 'blur':
+                videoFilters.push(`boxblur=${effect.value}:${effect.value}`);
+                break;
+              case 'hue-rotate':
+                videoFilters.push(`hue=s=${effect.value}`);
+                break;
+            }
+          });
+        } else if (typeof clip.filter === 'string') {
+          // Legacy string filters
+          switch (clip.filter) {
+            case 'grayscale': videoFilters.push('colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3'); break;
+            case 'sepia': videoFilters.push('colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131'); break;
+            case 'invert': videoFilters.push('negate'); break;
+            case 'brightness': videoFilters.push('eq=brightness=1.3'); break;
+            case 'darken': videoFilters.push('eq=brightness=0.7'); break;
+            case 'contrast': videoFilters.push('eq=contrast=1.5'); break;
+            case 'saturate': videoFilters.push('eq=saturation=1.8'); break;
+            case 'desaturate': videoFilters.push('eq=saturation=0.3'); break;
+            case 'blur': videoFilters.push('boxblur=3:3'); break;
+            case 'hue-rotate': videoFilters.push('hue=s=90'); break;
+            // Complex filters - convert to multiple effects
+            case 'vintage':
+              videoFilters.push('eq=brightness=0.9');
+              videoFilters.push('eq=contrast=1.1');
+              videoFilters.push('colorchannelmixer=.157:.314:.075:0:.140:.280:.068:0:.109:.214:.052');
+              break;
+            case 'cool':
+              videoFilters.push('hue=s=180');
+              videoFilters.push('eq=saturation=0.8');
+              break;
+            case 'warm':
+              videoFilters.push('eq=brightness=1.05');
+              videoFilters.push('eq=saturation=1.2');
+              videoFilters.push('colorchannelmixer=.118:.231:.056:0:.105:.206:.050:0:.082:.160:.039');
+              break;
+          }
         }
       }
 
