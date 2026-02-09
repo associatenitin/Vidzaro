@@ -2,10 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVideoUrl } from '../../services/api';
 import { convertFilterToCSS } from '../../utils/filterUtils';
 
-export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
+export default function VideoPlayer({ project, currentTime, previewTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
-  const [previewTime, setPreviewTime] = useState(0);
   const progressRef = useRef(null);
   const displaySourceRef = useRef(null); // video or img element from the active layer (for Take Photo)
   const [hasDisplaySource, setHasDisplaySource] = useState(false);
@@ -53,36 +52,36 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
       if (trackDiff !== 0) return trackDiff;
       return (a.startPos || 0) - (b.startPos || 0);
     });
-    
+
     // Check all pairs of clips on the same track
     for (let i = 0; i < sortedClips.length; i++) {
       const clip1 = sortedClips[i];
       const track1 = project.tracks?.find(t => t.id === (clip1.track || 0));
       if (track1?.hidden || clip1.videoEnabled === false) continue;
-      
+
       // Look for next clip on same track
       for (let j = i + 1; j < sortedClips.length; j++) {
         const clip2 = sortedClips[j];
         const track2 = project.tracks?.find(t => t.id === (clip2.track || 0));
-        
+
         // If different track, stop searching (clips are sorted by track)
         if ((clip1.track || 0) !== (clip2.track || 0)) break;
         if (track2?.hidden || clip2.videoEnabled === false) continue;
-        
+
         const clip1Duration = ((clip1.trimEnd || clip1.endTime) - (clip1.trimStart || 0)) / (clip1.speed || 1);
         const clip1End = (clip1.startPos || 0) + clip1Duration;
         const clip2Start = clip2.startPos || 0;
-        
+
         // Check if we're in a transition zone
         const transition = clip1.transitionOut || clip2.transitionIn;
         if (!transition || !transition.type || !transition.duration) continue;
-        
+
         // Calculate transition boundaries
         // Transition happens at the boundary between clips
         // If clips overlap, transition happens during overlap
         // If clips don't overlap, transition happens centered at the boundary
         let transitionStart, transitionEnd;
-        
+
         if (clip1End > clip2Start) {
           // Clips overlap - transition happens during overlap period
           transitionStart = Math.max(clip1End - transition.duration, clip2Start);
@@ -93,10 +92,10 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           transitionStart = Math.max(0, boundary - transition.duration / 2);
           transitionEnd = boundary + transition.duration / 2;
         }
-        
+
         // Check if currentTime is within transition zone
         if (currentTime >= transitionStart && currentTime <= transitionEnd) {
-          const progress = (transitionEnd - transitionStart) > 0 
+          const progress = (transitionEnd - transitionStart) > 0
             ? (currentTime - transitionStart) / (transitionEnd - transitionStart)
             : 0;
           const transitionResult = {
@@ -120,12 +119,12 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           });
           return transitionResult;
         }
-        
+
         // If clip2 starts after clip1 ends, no need to check further clips
         if (clip2Start >= clip1End) break;
       }
     }
-    
+
     return null;
   };
 
@@ -136,7 +135,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
     const start = clip.startPos || 0;
     const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
     const clipEnd = start + clipDuration;
-    
+
     // Calculate local time within the clip's trimmed range
     let clipLocalTime;
     if (time < start) {
@@ -150,10 +149,10 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
       const relativeTime = time - start;
       clipLocalTime = (relativeTime * (clip.speed || 1)) + (clip.trimStart || 0);
     }
-    
+
     // Clamp to valid range
     clipLocalTime = Math.max(clip.trimStart || 0, Math.min(clipLocalTime, clip.trimEnd || clip.endTime));
-    
+
     return {
       clip,
       clipStartTimeOnTimeline: start,
@@ -164,7 +163,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
   // If in transition, get both clips (even if they're not in activeClips)
   let transitionFromClip = null;
   let transitionToClip = null;
-  
+
   if (transitionInfo) {
     // Get fromClip - might not be in activeClips if transition is happening at clip end
     const fromClip = transitionInfo.fromClip;
@@ -178,7 +177,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
         startPos: fromClip.startPos
       });
     }
-    
+
     // Get toClip - might not be in activeClips if transition is happening before clip start
     const toClip = transitionInfo.toClip;
     const toTrack = project.tracks?.find(t => t.id === (toClip.track || 0));
@@ -191,7 +190,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
         startPos: toClip.startPos
       });
     }
-    
+
     if (!transitionFromClip || !transitionToClip) {
       console.warn('Transition detected but clips not found:', {
         hasFromClip: !!transitionFromClip,
@@ -213,9 +212,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
   // Reset preview time when asset changes
   useEffect(() => {
-    if (previewAsset) {
-      setPreviewTime(0);
-    }
+    // handled in App.jsx now
   }, [previewAsset?.id]);
 
   // Format time as mm:ss
@@ -227,11 +224,25 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
   // Handle progress bar click for seeking
   const handleProgressClick = (e) => {
-    if (!progressRef.current || !onTimeUpdate) return;
+    if (!progressRef.current) return;
     const rect = progressRef.current.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const newTime = ratio * totalDuration;
-    onTimeUpdate(newTime);
+    const newTime = ratio * displayDuration;
+
+    if (showPreview) {
+      setPreviewTime(newTime);
+    } else if (onTimeUpdate) {
+      onTimeUpdate(newTime);
+    }
+  };
+
+  const handleSeek = (newTime) => {
+    const clampedTime = Math.max(0, Math.min(newTime, displayDuration));
+    if (showPreview) {
+      setPreviewTime(clampedTime);
+    } else if (onTimeUpdate) {
+      onTimeUpdate(clampedTime);
+    }
   };
 
   const displayTime = showPreview ? previewTime : currentTime;
@@ -285,13 +296,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           asset={previewAsset}
           isPlaying={isPlaying}
           currentTime={previewTime}
-          onTimeUpdate={(time) => {
-            setPreviewTime(time);
-            // Also update main timeline time when previewing (if timeline is empty)
-            if (project.clips.length === 0 && onTimeUpdate) {
-              onTimeUpdate(time);
-            }
-          }}
+          onTimeUpdate={onTimeUpdate}
           registerDisplaySource={registerDisplaySource}
         />
       ) : (
@@ -321,7 +326,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
               />
             );
           })}
-          
+
           {/* Audio for transition clips */}
           {transitionInfo && transitionToClip && (
             <>
@@ -428,7 +433,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
           <div className="flex items-center gap-3">
             {/* Skip to Start */}
             <button
-              onClick={() => onTimeUpdate && onTimeUpdate(0)}
+              onClick={() => handleSeek(0)}
               className="p-1.5 text-white/80 hover:text-white transition-colors"
               title="Skip to start (Home)"
             >
@@ -439,7 +444,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
             {/* Previous Frame */}
             <button
-              onClick={() => onTimeUpdate && onTimeUpdate(Math.max(0, displayTime - 1 / 30))}
+              onClick={() => handleSeek(displayTime - 1 / 30)}
               className="p-1.5 text-white/80 hover:text-white transition-colors"
               title="Previous frame (←)"
             >
@@ -467,7 +472,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
             {/* Next Frame */}
             <button
-              onClick={() => onTimeUpdate && onTimeUpdate(Math.min(displayDuration, displayTime + 1 / 30))}
+              onClick={() => handleSeek(displayTime + 1 / 30)}
               className="p-1.5 text-white/80 hover:text-white transition-colors"
               title="Next frame (→)"
             >
@@ -478,7 +483,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
             {/* Skip to End */}
             <button
-              onClick={() => onTimeUpdate && onTimeUpdate(displayDuration)}
+              onClick={() => handleSeek(displayDuration)}
               className="p-1.5 text-white/80 hover:text-white transition-colors"
               title="Skip to end (End)"
             >
@@ -556,7 +561,7 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
       if (transitionInfo) {
         const isFromClip = transitionInfo.fromClip.id === clip.id;
         const isToClip = transitionInfo.toClip.id === clip.id;
-        
+
         if (isFromClip && transitionInfo.transition.type === 'crossfade') {
           // Fade out during transition
           volume *= (1 - transitionInfo.progress);
@@ -663,7 +668,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
   const { transition, progress } = transitionInfo;
   const { clip: fromClip, clipLocalTime: fromLocalTime } = fromClipInfo;
   const { clip: toClip, clipLocalTime: toLocalTime } = toClipInfo;
-  
+
   const isFromImage = fromClip.type === 'image' || fromClip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
   const isToImage = toClip.type === 'image' || toClip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
   const fromVideoUrl = getVideoUrl(fromClip.videoId);
@@ -683,68 +688,68 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
         fromStyle.opacity = 1 - progress;
         toStyle.opacity = progress;
         break;
-      
+
       case 'wipe-left':
         fromStyle.clipPath = `inset(0 ${progress * 100}% 0 0)`;
         toStyle.clipPath = `inset(0 0 0 ${progress * 100}%)`;
         break;
-      
+
       case 'wipe-right':
         fromStyle.clipPath = `inset(0 0 0 ${progress * 100}%)`;
         toStyle.clipPath = `inset(0 ${progress * 100}% 0 0)`;
         break;
-      
+
       case 'wipe-up':
         fromStyle.clipPath = `inset(${progress * 100}% 0 0 0)`;
         toStyle.clipPath = `inset(0 0 ${progress * 100}% 0)`;
         break;
-      
+
       case 'wipe-down':
         fromStyle.clipPath = `inset(0 0 ${progress * 100}% 0)`;
         toStyle.clipPath = `inset(${progress * 100}% 0 0 0)`;
         break;
-      
+
       case 'slide-left':
         fromStyle.transform = `translateX(${-progress * 100}%)`;
         toStyle.transform = `translateX(${(1 - progress) * 100}%)`;
         break;
-      
+
       case 'slide-right':
         fromStyle.transform = `translateX(${progress * 100}%)`;
         toStyle.transform = `translateX(${-(1 - progress) * 100}%)`;
         break;
-      
+
       case 'slide-up':
         fromStyle.transform = `translateY(${-progress * 100}%)`;
         toStyle.transform = `translateY(${(1 - progress) * 100}%)`;
         break;
-      
+
       case 'slide-down':
         fromStyle.transform = `translateY(${progress * 100}%)`;
         toStyle.transform = `translateY(${-(1 - progress) * 100}%)`;
         break;
-      
+
       case 'zoom-in':
         fromStyle.transform = `scale(${1 + progress})`;
         fromStyle.opacity = 1 - progress;
         toStyle.transform = `scale(${1 - (1 - progress)})`;
         toStyle.opacity = progress;
         break;
-      
+
       case 'zoom-out':
         fromStyle.transform = `scale(${1 - progress})`;
         fromStyle.opacity = 1 - progress;
         toStyle.transform = `scale(${progress})`;
         toStyle.opacity = progress;
         break;
-      
+
       case 'blur':
         fromStyle.filter = `${getFilterStyle(fromClip.filter)} blur(${(1 - progress) * 10}px)`;
         fromStyle.opacity = 1 - progress;
         toStyle.filter = `${getFilterStyle(toClip.filter)} blur(${progress * 10}px)`;
         toStyle.opacity = progress;
         break;
-      
+
       default:
         fromStyle.opacity = 1 - progress;
         toStyle.opacity = progress;
@@ -766,7 +771,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
         />
       );
     }
-    
+
     return (
       <TransitionVideoLayer
         clip={fromClip}
@@ -789,7 +794,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
         />
       );
     }
-    
+
     return (
       <TransitionVideoLayer
         clip={toClip}
@@ -810,7 +815,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
           Transition: {transition.type} ({Math.round(progress * 100)}%)
         </div>
       )}
-      
+
       {/* From Clip */}
       <div className="absolute inset-0 flex items-center justify-center" style={fromStyle}>
         {renderFromClip()}

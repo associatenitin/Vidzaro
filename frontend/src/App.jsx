@@ -64,6 +64,7 @@ function App() {
   const [enhanceDialogAsset, setEnhanceDialogAsset] = useState(null);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
+  const [previewTime, setPreviewTime] = useState(0); // Time for the currently previewed asset
   const [selectedClipIds, setSelectedClipIds] = useState([]); // Clips selected on timeline
   const [clipboard, setClipboard] = useState(null); // Clipboard for copy/paste
 
@@ -94,6 +95,10 @@ function App() {
     if (isPlaying) {
       setIsPlaying(false);
     }
+    // Also reset preview time when asset changes
+    if (selectedAsset) {
+      setPreviewTime(0);
+    }
   }, [selectedAsset?.id]); // Only trigger when the selected asset ID changes (switching modes)
 
   // Layout state
@@ -101,7 +106,15 @@ function App() {
   const [isResizing, setIsResizing] = useState(false);
 
   const handleTimeUpdate = (time) => {
-    setCurrentTime(time);
+    if (selectedAsset) {
+      setPreviewTime(time);
+      // ONLY update main timeline if it's empty AND we are at start
+      if (project.clips.length === 0 && currentTime === 0) {
+        setCurrentTime(time);
+      }
+    } else {
+      setCurrentTime(time);
+    }
   };
 
   const handlePlayPause = (playing) => {
@@ -240,7 +253,7 @@ function App() {
   const handleAIEnhance = () => {
     // Try to get video from selected clips first
     let videoAsset = null;
-    
+
     if (selectedClipIds.length > 0) {
       // Get the first selected clip
       const selectedClip = project.clips.find(c => selectedClipIds.includes(c.id));
@@ -249,7 +262,7 @@ function App() {
         videoAsset = project.assets.find(a => a.id === selectedClip.assetId || a.filename === selectedClip.videoId);
       }
     }
-    
+
     // If no selected clip, try to find clip at current time
     if (!videoAsset) {
       const clipAtTime = project.clips.find(c => {
@@ -257,12 +270,12 @@ function App() {
         const duration = ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1);
         return currentTime >= startPos && currentTime < startPos + duration;
       });
-      
+
       if (clipAtTime) {
         videoAsset = project.assets.find(a => a.id === clipAtTime.assetId || a.filename === clipAtTime.videoId);
       }
     }
-    
+
     // Only open if we found a video asset (not image or audio)
     if (videoAsset && videoAsset.type === 'video') {
       setEnhanceDialogAsset(videoAsset);
@@ -286,13 +299,27 @@ function App() {
       if (e.code === 'KeyV' && !e.ctrlKey) setActiveTool('select');
       if (e.code === 'KeyB' && !e.ctrlKey) setActiveTool('ripple');
       if (e.code === 'KeyS' && !e.ctrlKey) handleSplit();
-      if (e.code === 'ArrowLeft') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; setCurrentTime(Math.max(0, currentTime - step)); }
-      if (e.code === 'ArrowRight') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; setCurrentTime(currentTime + step); }
-      if (e.code === 'Home') { e.preventDefault(); setCurrentTime(0); }
-      if ((e.code === 'Delete' || e.code === 'Backspace') && selectedClipIds.length > 0) { 
-        e.preventDefault(); 
-        selectedClipIds.forEach(clipId => removeClip(clipId)); 
-        setSelectedClipIds([]); 
+
+      const activeTime = selectedAsset ? previewTime : currentTime;
+      const activeDuration = selectedAsset ? (selectedAsset.duration || 0) : project.clips.reduce((max, clip) => {
+        const clipEnd = (clip.startPos || 0) + (((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1));
+        return Math.max(max, clipEnd);
+      }, 0);
+
+      const seekTo = (newTime) => {
+        const clamped = Math.max(0, Math.min(newTime, activeDuration));
+        if (selectedAsset) setPreviewTime(clamped);
+        else setCurrentTime(clamped);
+      };
+
+      if (e.code === 'ArrowLeft') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; seekTo(activeTime - step); }
+      if (e.code === 'ArrowRight') { e.preventDefault(); const step = e.shiftKey ? 1 : 1 / 30; seekTo(activeTime + step); }
+      if (e.code === 'Home') { e.preventDefault(); seekTo(0); }
+      if (e.code === 'End') { e.preventDefault(); seekTo(activeDuration); }
+      if ((e.code === 'Delete' || e.code === 'Backspace') && selectedClipIds.length > 0) {
+        e.preventDefault();
+        selectedClipIds.forEach(clipId => removeClip(clipId));
+        setSelectedClipIds([]);
       }
       if (e.ctrlKey && e.code === 'KeyC' && selectedClipIds.length > 0) {
         e.preventDefault();
@@ -310,9 +337,9 @@ function App() {
           clipboard.clips.forEach((clipData, index) => {
             const asset = project.assets.find(a => a.id === clipData.assetId);
             if (asset) {
-              const position = { 
-                track: clipData.track || 0, 
-                time: currentTime + clipData.relativeStartPos 
+              const position = {
+                track: clipData.track || 0,
+                time: currentTime + clipData.relativeStartPos
               };
               addClip(asset, position);
             }
@@ -343,28 +370,28 @@ function App() {
         <ArcaneMistBg />
         <div className="relative z-10 flex items-center gap-6 flex-1 min-w-0">
           <HeaderBrand />
-        <MenuBar
-          onNewProject={handleNewProject}
-          onOpen={handleLoad}
-          onSave={handleSave}
-          onSaveAs={handleSave}
-          onUndo={undo}
-          onRedo={redo}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onDeleteSelected={handleDeleteSelected}
-          onDeselect={handleDeselect}
-          hasSelection={selectedClipIds.length > 0}
-          onStartRecording={() => setShowRecorder(true)}
-          onVideoMorph={() => setShowMorphWizard(true)}
-          onOpenPreferences={() => setShowPreferences(true)}
-          onOpenAdmin={() => setShowAdminPanel(true)}
-          onExport={() => setShowExportPanel(true)}
-          canExport={project.clips.length > 0}
-          onKeyboardShortcuts={handleKeyboardShortcuts}
-          onAbout={handleAbout}
-          onResetTimelineHeight={handleResetTimelineHeight}
-        />
+          <MenuBar
+            onNewProject={handleNewProject}
+            onOpen={handleLoad}
+            onSave={handleSave}
+            onSaveAs={handleSave}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onDeleteSelected={handleDeleteSelected}
+            onDeselect={handleDeselect}
+            hasSelection={selectedClipIds.length > 0}
+            onStartRecording={() => setShowRecorder(true)}
+            onVideoMorph={() => setShowMorphWizard(true)}
+            onOpenPreferences={() => setShowPreferences(true)}
+            onOpenAdmin={() => setShowAdminPanel(true)}
+            onExport={() => setShowExportPanel(true)}
+            canExport={project.clips.length > 0}
+            onKeyboardShortcuts={handleKeyboardShortcuts}
+            onAbout={handleAbout}
+            onResetTimelineHeight={handleResetTimelineHeight}
+          />
           <input
             type="text"
             value={project.name}
@@ -420,6 +447,7 @@ function App() {
             <VideoPlayer
               project={project}
               currentTime={currentTime}
+              previewTime={previewTime}
               isPlaying={isPlaying}
               onTimeUpdate={handleTimeUpdate}
               onPlayPause={handlePlayPause}
@@ -457,8 +485,8 @@ function App() {
               return;
             }
             if (isMultiSelect) {
-              setSelectedClipIds(prev => 
-                prev.includes(clipId) 
+              setSelectedClipIds(prev =>
+                prev.includes(clipId)
                   ? prev.filter(id => id !== clipId)
                   : [...prev, clipId]
               );
@@ -476,9 +504,9 @@ function App() {
               clipboard.clips.forEach((clipData) => {
                 const asset = project.assets.find(a => a.id === clipData.assetId);
                 if (asset) {
-                  const pastePosition = position || { 
-                    track: clipData.track || 0, 
-                    time: currentTime + clipData.relativeStartPos 
+                  const pastePosition = position || {
+                    track: clipData.track || 0,
+                    time: currentTime + clipData.relativeStartPos
                   };
                   addClip(asset, pastePosition);
                 }
@@ -504,7 +532,7 @@ function App() {
           onAlignClips={(clipIds, alignment) => {
             const clipsToAlign = project.clips.filter(c => clipIds.includes(c.id));
             if (clipsToAlign.length === 0) return;
-            
+
             if (alignment === 'start') {
               const minStartPos = Math.min(...clipsToAlign.map(c => c.startPos || 0));
               clipsToAlign.forEach(clip => {
@@ -630,7 +658,7 @@ function App() {
           }}
         />
       )}
-      
+
       {/* Toast notifications for errors */}
       <ToastContainer />
     </div>
