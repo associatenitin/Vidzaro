@@ -23,6 +23,7 @@ export function convertStringToFilter(filterString) {
     'saturate': { type: 'saturate', value: 1.8 },
     'desaturate': { type: 'saturate', value: 0.3 },
     'hue-rotate': { type: 'hue-rotate', value: 90 },
+    'sharpen': { type: 'sharpen', value: 1.0 },
     'vintage': [
       { type: 'sepia', value: 40 },
       { type: 'contrast', value: 1.1 },
@@ -94,6 +95,12 @@ export function convertFilterToCSS(filter) {
         return `hue-rotate(${effect.value}deg)`;
       case 'invert':
         return `invert(${effect.value}%)`;
+      case 'sharpen':
+        // CSS doesn't have a direct sharpen filter, so use contrast and brightness to simulate
+        // Map sharpen value (0-3) to contrast (1.0-1.3) and brightness (1.0-1.05)
+        const contrastValue = 1.0 + (effect.value * 0.1);
+        const brightnessValue = 1.0 + (effect.value * 0.0167);
+        return `contrast(${contrastValue}) brightness(${brightnessValue})`;
       default:
         return null;
     }
@@ -126,7 +133,8 @@ export function convertFilterToString(filter) {
       'contrast': { type: 'contrast', value: 1.5 },
       'saturate': { type: 'saturate', value: 1.8 },
       'desaturate': { type: 'saturate', value: 0.3 },
-      'hue-rotate': { type: 'hue-rotate', value: 90 }
+      'hue-rotate': { type: 'hue-rotate', value: 90 },
+      'sharpen': { type: 'sharpen', value: 1.0 }
     };
 
     // Check if this matches a built-in exactly
@@ -227,9 +235,10 @@ export function getEffectDefaults() {
     saturate: { min: 0, max: 2, default: 1, step: 0.1, unit: '' },
     blur: { min: 0, max: 20, default: 0, step: 0.5, unit: 'px' },
     grayscale: { min: 0, max: 100, default: 0, step: 1, unit: '%' },
-    sepia: { min: 0, max: 100, default: 0, step: 1, unit: '%' },
+    sepia: { min: 0, max: 100, default: 0, step: 1, unit: '' },
     'hue-rotate': { min: 0, max: 360, default: 0, step: 1, unit: 'deg' },
-    invert: { min: 0, max: 100, default: 0, step: 1, unit: '%' }
+    invert: { min: 0, max: 100, default: 0, step: 1, unit: '%' },
+    sharpen: { min: 0, max: 3, default: 1.0, step: 0.1, unit: '' }
   };
 }
 
@@ -245,7 +254,8 @@ export function getEffectDisplayName(type) {
     grayscale: 'Grayscale',
     sepia: 'Sepia',
     'hue-rotate': 'Hue Rotate',
-    invert: 'Invert'
+    invert: 'Invert',
+    sharpen: 'Sharpen'
   };
   return names[type] || type;
 }

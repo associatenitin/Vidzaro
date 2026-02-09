@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { convertFilterToCSS, getEffectDefaults, getEffectDisplayName, convertStringToFilter } from '../../utils/filterUtils';
 import { getVideoUrl } from '../../services/api';
+import EnhanceDialog from '../Deblur/EnhanceDialog';
 
 const AVAILABLE_EFFECTS = [
   { type: 'brightness', icon: '☀️' },
   { type: 'contrast', icon: '🎨' },
   { type: 'saturate', icon: '🌈' },
   { type: 'blur', icon: '🌫️' },
+  { type: 'sharpen', icon: '✨' },
   { type: 'grayscale', icon: '⚫' },
   { type: 'sepia', icon: '📸' },
   { type: 'hue-rotate', icon: '🎭' },
@@ -21,13 +23,15 @@ export default function FilterEditor({
   onSave, 
   onApply, 
   onClose,
-  onSavePreset 
+  onSavePreset,
+  onAddAsset
 }) {
   const [effects, setEffects] = useState([]);
   const [presetName, setPresetName] = useState('');
   const [showPresetSave, setShowPresetSave] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
+  const [showEnhanceDialog, setShowEnhanceDialog] = useState(false);
   const previewVideoRef = useRef(null);
   const previewImageRef = useRef(null);
 
@@ -430,6 +434,15 @@ export default function FilterEditor({
             >
               Save as Preset
             </button>
+            {previewClip && !isImage && (
+              <button
+                onClick={() => setShowEnhanceDialog(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors text-sm"
+                title="AI-powered video clarity enhancement"
+              >
+                ✨ AI Enhance
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -447,6 +460,22 @@ export default function FilterEditor({
           </div>
         </div>
       </div>
+      
+      {/* AI Enhance Dialog */}
+      {showEnhanceDialog && previewClip && (
+        <EnhanceDialog
+          videoAsset={previewClip}
+          onClose={() => setShowEnhanceDialog(false)}
+          onComplete={(asset) => {
+            // Add enhanced video to project assets
+            if (onAddAsset) {
+              onAddAsset(asset);
+            }
+            setShowEnhanceDialog(false);
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 }

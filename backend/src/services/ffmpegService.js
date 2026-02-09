@@ -330,6 +330,15 @@ export async function exportVideo(projectData, outputPath, tempDir) {
               case 'hue-rotate':
                 videoFilters.push(`hue=s=${effect.value}`);
                 break;
+              case 'sharpen':
+                // FFmpeg unsharp filter: lx/ly=matrix size, la=amount (strength)
+                // Map value (0-3) to unsharp amount (0.5-3.0)
+                // Matrix size 5x5 is a good default for most cases
+                const sharpenAmount = effect.value > 0 ? Math.max(0.5, Math.min(3.0, effect.value)) : 0;
+                if (sharpenAmount > 0) {
+                  videoFilters.push(`unsharp=lx=5:ly=5:la=${sharpenAmount.toFixed(2)}:cx=5:cy=5:ca=${(sharpenAmount * 0.3).toFixed(2)}`);
+                }
+                break;
             }
           });
         } else if (typeof clip.filter === 'string') {
@@ -345,6 +354,7 @@ export async function exportVideo(projectData, outputPath, tempDir) {
             case 'desaturate': videoFilters.push('eq=saturation=0.3'); break;
             case 'blur': videoFilters.push('boxblur=3:3'); break;
             case 'hue-rotate': videoFilters.push('hue=s=90'); break;
+            case 'sharpen': videoFilters.push('unsharp=lx=5:ly=5:la=1.5:cx=5:cy=5:ca=0.5'); break;
             // Complex filters - convert to multiple effects
             case 'vintage':
               videoFilters.push('eq=brightness=0.9');

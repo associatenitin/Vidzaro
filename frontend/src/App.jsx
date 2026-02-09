@@ -14,6 +14,8 @@ import Recorder from './components/Recorder/Recorder';
 import ShareDialog from './components/Share/ShareDialog';
 import MorphWizard from './components/Morph/MorphWizard';
 import PreferencesDialog from './components/Preferences/PreferencesDialog';
+import AdminPanel from './components/Admin/AdminPanel';
+import EnhanceDialog from './components/Deblur/EnhanceDialog';
 import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
@@ -57,6 +59,9 @@ function App() {
   const [showRecorder, setShowRecorder] = useState(false);
   const [showMorphWizard, setShowMorphWizard] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showEnhanceDialog, setShowEnhanceDialog] = useState(false);
+  const [enhanceDialogAsset, setEnhanceDialogAsset] = useState(null);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
   const [selectedClipIds, setSelectedClipIds] = useState([]); // Clips selected on timeline
@@ -232,6 +237,41 @@ function App() {
     alert('Vidzaro — Edit videos. Zero limits.\n\nA video editor in the browser.');
   };
 
+  const handleAIEnhance = () => {
+    // Try to get video from selected clips first
+    let videoAsset = null;
+    
+    if (selectedClipIds.length > 0) {
+      // Get the first selected clip
+      const selectedClip = project.clips.find(c => selectedClipIds.includes(c.id));
+      if (selectedClip) {
+        // Find the asset for this clip
+        videoAsset = project.assets.find(a => a.id === selectedClip.assetId || a.filename === selectedClip.videoId);
+      }
+    }
+    
+    // If no selected clip, try to find clip at current time
+    if (!videoAsset) {
+      const clipAtTime = project.clips.find(c => {
+        const startPos = c.startPos || 0;
+        const duration = ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1);
+        return currentTime >= startPos && currentTime < startPos + duration;
+      });
+      
+      if (clipAtTime) {
+        videoAsset = project.assets.find(a => a.id === clipAtTime.assetId || a.filename === clipAtTime.videoId);
+      }
+    }
+    
+    // Only open if we found a video asset (not image or audio)
+    if (videoAsset && videoAsset.type === 'video') {
+      setEnhanceDialogAsset(videoAsset);
+      setShowEnhanceDialog(true);
+    } else {
+      alert('Please select a video clip on the timeline or position the playhead over a video clip to enhance.');
+    }
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -318,6 +358,7 @@ function App() {
           onStartRecording={() => setShowRecorder(true)}
           onVideoMorph={() => setShowMorphWizard(true)}
           onOpenPreferences={() => setShowPreferences(true)}
+          onOpenAdmin={() => setShowAdminPanel(true)}
           onExport={() => setShowExportPanel(true)}
           canExport={project.clips.length > 0}
           onKeyboardShortcuts={handleKeyboardShortcuts}
@@ -373,6 +414,7 @@ function App() {
             canUndo={canUndo}
             canRedo={canRedo}
             onOpenPreferences={() => setShowPreferences(true)}
+            onAIEnhance={handleAIEnhance}
           />
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
             <VideoPlayer
@@ -427,6 +469,7 @@ function App() {
           }}
           onAddTrack={addTrack}
           onRemoveTrack={removeTrack}
+          onAddAsset={addAsset}
           clipboard={clipboard}
           onPasteClips={(position) => {
             if (clipboard && clipboard.clips && clipboard.clips.length > 0) {
@@ -538,6 +581,10 @@ function App() {
         onClose={() => setShowPreferences(false)}
       />
 
+      {showAdminPanel && (
+        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+      )}
+
       {showMorphWizard && (
         <MorphWizard
           project={project}
@@ -545,6 +592,21 @@ function App() {
           onComplete={(asset) => {
             addAsset(asset);
             addClip(asset, null);
+          }}
+        />
+      )}
+
+      {showEnhanceDialog && enhanceDialogAsset && (
+        <EnhanceDialog
+          videoAsset={enhanceDialogAsset}
+          onClose={() => {
+            setShowEnhanceDialog(false);
+            setEnhanceDialogAsset(null);
+          }}
+          onComplete={(asset) => {
+            addAsset(asset);
+            setShowEnhanceDialog(false);
+            setEnhanceDialogAsset(null);
           }}
         />
       )}

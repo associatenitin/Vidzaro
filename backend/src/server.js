@@ -10,6 +10,8 @@ import projectRoutes from './routes/projects.js';
 import recordingRoutes from './routes/recordings.js';
 import shareRoutes from './routes/shares.js';
 import morphRoutes from './routes/morph.js';
+import deblurRoutes from './routes/deblur.js';
+import adminRoutes from './routes/admin.js';
 import { errorHandler } from './utils/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +38,8 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/recordings', recordingRoutes);
 app.use('/api/shares', shareRoutes);
 app.use('/api/morph', morphRoutes);
+app.use('/api/deblur', deblurRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

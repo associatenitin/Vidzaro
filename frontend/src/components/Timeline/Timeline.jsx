@@ -36,7 +36,8 @@ export default function Timeline({
   onSplitAtPlayhead,
   onSaveCustomFilter,
   onDeleteCustomFilter,
-  onUpdateCustomFilter
+  onUpdateCustomFilter,
+  onAddAsset
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -1151,6 +1152,7 @@ export default function Timeline({
           onApply={filterEditor.onApply}
           onSavePreset={filterEditor.onSavePreset}
           onClose={() => setFilterEditor(null)}
+          onAddAsset={onAddAsset}
         />
       )}
     </div>

@@ -171,4 +171,41 @@ export async function morphGetProgress(jobId) {
   return res.data;
 }
 
+// Video Deblur: enhance video clarity
+export async function deblurEnhance(videoId, options = {}) {
+  const { useCuda = true, qualityMode = 'balanced', jobId } = options;
+  const res = await api.post('/deblur/enhance', { videoId, useCuda, qualityMode, jobId });
+  return res.data;
+}
+
+// Video Deblur: poll progress
+export async function deblurGetProgress(jobId) {
+  const res = await api.get(`/deblur/progress/${jobId}`);
+  return res.data;
+}
+
+// Admin: get services status
+export async function adminGetServices() {
+  const res = await api.get('/admin/services');
+  return res.data;
+}
+
+// Admin: start/stop services
+export async function adminMorphStart() {
+  const res = await api.post('/admin/services/morph/start');
+  return res.data;
+}
+export async function adminMorphStop() {
+  const res = await api.post('/admin/services/morph/stop');
+  return res.data;
+}
+export async function adminDeblurStart() {
+  const res = await api.post('/admin/services/deblur/start');
+  return res.data;
+}
+export async function adminDeblurStop() {
+  const res = await api.post('/admin/services/deblur/stop');
+  return res.data;
+}
+
 export default api;
