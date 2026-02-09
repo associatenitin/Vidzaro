@@ -13,7 +13,8 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const clipContainerRef = useRef(null);
   const [isHoveringSettings, setIsHoveringSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [panelPosition, setPanelPosition] = useState({ top: '-1px', left: '8px', transform: 'none' });
+  const [panelPosition, setPanelPosition] = useState({ top: 0, left: 0, position: 'fixed' });
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
   const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
@@ -122,80 +123,69 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const handleContextMenu = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    // Store the click position for panel positioning
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
     setShowSettings((prev) => !prev);
   };
 
-  // Calculate panel position to avoid viewport overflow
+  // Calculate panel position to avoid viewport overflow using fixed positioning
   useEffect(() => {
-    if (!showSettings || !settingsPanelRef.current || !clipContainerRef.current) return;
+    if (!showSettings || !settingsPanelRef.current) return;
 
     const updatePanelPosition = () => {
       const panel = settingsPanelRef.current;
-      const clipContainer = clipContainerRef.current;
-      if (!panel || !clipContainer) return;
+      if (!panel) return;
 
-      const clipRect = clipContainer.getBoundingClientRect();
       const panelRect = panel.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
 
-      // Panel dimensions (w-56 = 224px, plus padding)
-      const panelWidth = 224; // w-56 = 14rem = 224px
-      const panelHeight = panelRect.height || 300; // Approximate, will be measured
+      // Panel dimensions (w-56 = 224px)
+      const panelWidth = 224;
+      const panelHeight = panelRect.height || 300;
 
-      let top = '-1px';
-      let left = '8px';
+      // Start with right-click position, offset slightly
+      let top = contextMenuPos.y + 8;
+      let left = contextMenuPos.x + 8;
       let transform = 'none';
 
-      // Check horizontal overflow
-      const clipRight = clipRect.right;
-      const spaceOnRight = viewportWidth - clipRight;
-      const spaceOnLeft = clipRect.left;
+      // Check horizontal overflow - prefer right side, flip to left if needed
+      const spaceOnRight = viewportWidth - contextMenuPos.x;
+      const spaceOnLeft = contextMenuPos.x;
 
       if (spaceOnRight < panelWidth && spaceOnLeft > panelWidth) {
         // Not enough space on right, but enough on left - flip to left side
-        left = 'auto';
-        transform = 'translateX(-100%)';
+        left = contextMenuPos.x - panelWidth - 8;
       } else if (spaceOnRight < panelWidth && spaceOnLeft < panelWidth) {
-        // Not enough space on either side - center it or align to viewport edge
-        if (clipRect.left + clipRect.width / 2 < viewportWidth / 2) {
-          // Clip is on left side, align panel to left edge of viewport
-          left = `${-clipRect.left + 8}px`;
+        // Not enough space on either side - align to viewport edge
+        if (contextMenuPos.x < viewportWidth / 2) {
+          left = 8; // Align to left edge
         } else {
-          // Clip is on right side, align panel to right edge
-          left = 'auto';
-          transform = `translateX(calc(-100% + ${viewportWidth - clipRect.right - 8}px))`;
+          left = viewportWidth - panelWidth - 8; // Align to right edge
         }
       }
 
-      // Check vertical overflow
-      const clipTop = clipRect.top;
-      const clipBottom = clipRect.bottom;
-      const spaceAbove = clipTop;
-      const spaceBelow = viewportHeight - clipBottom;
+      // Check vertical overflow - prefer below, flip above if needed
+      const spaceBelow = viewportHeight - contextMenuPos.y;
+      const spaceAbove = contextMenuPos.y;
 
       if (spaceBelow < panelHeight && spaceAbove > panelHeight) {
         // Not enough space below, but enough above - flip above
-        top = 'auto';
-        transform = transform === 'none' 
-          ? 'translateY(-100%)' 
-          : `${transform} translateY(-100%)`;
+        top = contextMenuPos.y - panelHeight - 8;
       } else if (spaceBelow < panelHeight && spaceAbove < panelHeight) {
-        // Not enough space on either side - position relative to viewport
-        if (clipTop + clipRect.height / 2 < viewportHeight / 2) {
-          // Clip is in upper half, align panel to top of viewport
-          top = `${-clipTop + 8}px`;
+        // Not enough space on either side - align to viewport edge
+        if (contextMenuPos.y < viewportHeight / 2) {
+          top = 8; // Align to top edge
         } else {
-          // Clip is in lower half, align panel to bottom of viewport
-          top = 'auto';
-          const bottomOffset = viewportHeight - clipBottom + 8;
-          transform = transform === 'none'
-            ? `translateY(calc(-100% + ${bottomOffset}px))`
-            : `${transform} translateY(calc(-100% + ${bottomOffset}px))`;
+          top = viewportHeight - panelHeight - 8; // Align to bottom edge
         }
       }
 
-      setPanelPosition({ top, left, transform });
+      // Ensure panel stays within viewport bounds
+      top = Math.max(8, Math.min(top, viewportHeight - panelHeight - 8));
+      left = Math.max(8, Math.min(left, viewportWidth - panelWidth - 8));
+
+      setPanelPosition({ top, left, transform, position: 'fixed' });
     };
 
     // Small delay to ensure panel is rendered and measured
@@ -209,7 +199,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       window.removeEventListener('resize', updatePanelPosition);
       window.removeEventListener('scroll', updatePanelPosition, true);
     };
-  }, [showSettings]); // Only depend on showSettings; position updates happen via getBoundingClientRect
+  }, [showSettings, contextMenuPos]);
 
   // Close settings when clicking outside the panel (e.g. on the clip thumbnail or elsewhere)
   useEffect(() => {
@@ -317,22 +307,24 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
         />
       </div>
 
-      {/* Filter, Audio & Speed controls - visible on right-click only - positioned outside clip container */}
-      <div
-        ref={settingsPanelRef}
-        style={{
-          top: panelPosition.top,
-          left: panelPosition.left,
-          transform: panelPosition.transform,
-          bottom: panelPosition.top === 'auto' && !panelPosition.transform.includes('translateY') ? 'auto' : undefined,
-        }}
-        className={`absolute pointer-events-auto transition-opacity flex flex-col gap-2 z-[100] bg-slate-900/95 p-2 rounded border border-slate-600 shadow-2xl w-56 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onMouseEnter={() => setIsHoveringSettings(true)}
-        onMouseLeave={() => setIsHoveringSettings(false)}
-        onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
-        onPointerDown={(e) => e.stopPropagation()} // Prevent drag start (for dnd-kit)
-        onDragStart={(e) => e.preventDefault()} // Prevent drag start
-      >
+      {/* Filter, Audio & Speed controls - visible on right-click only - positioned as fixed overlay */}
+      {showSettings && (
+        <div
+          ref={settingsPanelRef}
+          style={{
+            position: panelPosition.position || 'fixed',
+            top: `${panelPosition.top}px`,
+            left: `${panelPosition.left}px`,
+            transform: panelPosition.transform || 'none',
+            zIndex: 9999,
+          }}
+          className="pointer-events-auto transition-opacity flex flex-col gap-2 bg-slate-900/95 backdrop-blur-sm p-2 rounded border border-slate-600 shadow-2xl w-56"
+          onMouseEnter={() => setIsHoveringSettings(true)}
+          onMouseLeave={() => setIsHoveringSettings(false)}
+          onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
+          onPointerDown={(e) => e.stopPropagation()} // Prevent drag start (for dnd-kit)
+          onDragStart={(e) => e.preventDefault()} // Prevent drag start
+        >
         <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Clip Settings</span>
           <button
@@ -549,7 +541,8 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Remove button */}
       <button
