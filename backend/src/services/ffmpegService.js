@@ -347,6 +347,38 @@ export async function exportVideo(projectData, outputPath, tempDir) {
     let vIn = '[vbase]';
     let aIn = '[abase]';
 
+    // Detect transitions between clips
+    const detectTransitions = () => {
+      const transitions = [];
+      const sortedClips = [...processedClips].sort((a, b) => (a.startPos || 0) - (b.startPos || 0));
+      
+      for (let i = 0; i < sortedClips.length - 1; i++) {
+        const clip1 = sortedClips[i];
+        const clip2 = sortedClips[i + 1];
+        
+        if ((clip1.track || 0) !== (clip2.track || 0)) continue;
+        
+        const clip1Duration = ((clip1.trimEnd || clip1.endTime) - (clip1.trimStart || 0)) / (clip1.speed || 1);
+        const clip1End = (clip1.startPos || 0) + clip1Duration;
+        const clip2Start = clip2.startPos || 0;
+        
+        const transition = clip1.transitionOut || clip2.transitionIn;
+        if (transition && transition.type && clip1End > clip2Start - 0.1) {
+          transitions.push({
+            fromClip: clip1,
+            toClip: clip2,
+            transition,
+            overlapStart: Math.max(clip1End - transition.duration, clip2Start),
+            overlapEnd: Math.min(clip1End, clip2Start + transition.duration)
+          });
+        }
+      }
+      
+      return transitions;
+    };
+
+    const transitions = detectTransitions();
+
     // Sort by track index so lower tracks are processed first (drawn under)
     const sortedProcessed = [...processedClips].sort((a, b) => (a.track || 0) - (b.track || 0));
 
@@ -354,14 +386,53 @@ export async function exportVideo(projectData, outputPath, tempDir) {
     sortedProcessed.forEach((c, i) => {
       finalCommand = finalCommand.input(c.processedPath);
       const startMs = Math.round((c.startPos || 0) * 1000);
+      const clipDuration = ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1);
+      const clipEnd = (c.startPos || 0) + clipDuration;
 
-      // Video overlay
-      filterGraph.push(`[${i}:v]setpts=PTS-STARTPTS+${c.startPos || 0}/TB[v${i}]`);
+      // Check if this clip has a transition
+      const transitionOut = transitions.find(t => t.fromClip.id === c.id);
+      const transitionIn = transitions.find(t => t.toClip.id === c.id);
+
+      // Video overlay with transition support
+      let videoFilter = `[${i}:v]setpts=PTS-STARTPTS+${c.startPos || 0}/TB`;
+      
+      // Apply fade out if transitioning
+      if (transitionOut && transitionOut.transition.type === 'crossfade') {
+        const fadeStart = transitionOut.overlapStart - (c.startPos || 0);
+        const fadeDuration = transitionOut.transition.duration;
+        videoFilter += `,fade=t=out:st=${fadeStart}:d=${fadeDuration}`;
+      }
+      
+      // Apply fade in if transitioning in
+      if (transitionIn && transitionIn.transition.type === 'crossfade') {
+        const fadeStart = 0;
+        const fadeDuration = transitionIn.transition.duration;
+        videoFilter += `,fade=t=in:st=${fadeStart}:d=${fadeDuration}`;
+      }
+      
+      videoFilter += `[v${i}]`;
+      filterGraph.push(videoFilter);
       filterGraph.push(`${vIn}[v${i}]overlay=shortest=0:eof_action=pass[vnext${i}]`);
       vIn = `[vnext${i}]`;
 
-      // Audio delay and mix
-      filterGraph.push(`[${i}:a]adelay=${startMs}|${startMs}[a${i}]`);
+      // Audio delay and mix with crossfade support
+      let audioFilter = `[${i}:a]adelay=${startMs}|${startMs}`;
+      
+      // Apply audio crossfade
+      if (transitionOut && transitionOut.transition.type === 'crossfade') {
+        const fadeStart = transitionOut.overlapStart - (c.startPos || 0);
+        const fadeDuration = transitionOut.transition.duration;
+        audioFilter += `,afade=t=out:st=${fadeStart}:d=${fadeDuration}`;
+      }
+      
+      if (transitionIn && transitionIn.transition.type === 'crossfade') {
+        const fadeStart = 0;
+        const fadeDuration = transitionIn.transition.duration;
+        audioFilter += `,afade=t=in:st=${fadeStart}:d=${fadeDuration}`;
+      }
+      
+      audioFilter += `[a${i}]`;
+      filterGraph.push(audioFilter);
       filterGraph.push(`${aIn}[a${i}]amix=inputs=2:duration=longest[anext${i}]`);
       aIn = `[anext${i}]`;
     });

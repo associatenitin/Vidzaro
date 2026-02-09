@@ -468,6 +468,151 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </div>
         </div>
 
+        {/* Transitions */}
+        <div className="border-t border-slate-700 pt-1.5 mt-1.5 space-y-2">
+          <div className="text-[8px] text-slate-400 uppercase font-bold">Transitions</div>
+          
+          {/* Transition Out */}
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[8px] text-slate-400">TRANSITION OUT</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (clip.transitionOut) {
+                    onUpdate({ transitionOut: null });
+                  } else {
+                    onUpdate({ transitionOut: { type: 'crossfade', duration: 1 } });
+                  }
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`text-[8px] px-1 py-0.5 rounded ${clip.transitionOut ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+              >
+                {clip.transitionOut ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            {clip.transitionOut && (
+              <div className="space-y-1 pl-2 border-l-2 border-blue-500/50">
+                <select
+                  value={clip.transitionOut.type || 'crossfade'}
+                  onChange={(e) => onUpdate({ transitionOut: { ...clip.transitionOut, type: e.target.value } })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
+                >
+                  <optgroup label="Fade">
+                    <option value="crossfade">Crossfade</option>
+                  </optgroup>
+                  <optgroup label="Wipe">
+                    <option value="wipe-left">Wipe Left</option>
+                    <option value="wipe-right">Wipe Right</option>
+                    <option value="wipe-up">Wipe Up</option>
+                    <option value="wipe-down">Wipe Down</option>
+                  </optgroup>
+                  <optgroup label="Slide">
+                    <option value="slide-left">Slide Left</option>
+                    <option value="slide-right">Slide Right</option>
+                    <option value="slide-up">Slide Up</option>
+                    <option value="slide-down">Slide Down</option>
+                  </optgroup>
+                  <optgroup label="Zoom">
+                    <option value="zoom-in">Zoom In</option>
+                    <option value="zoom-out">Zoom Out</option>
+                  </optgroup>
+                  <optgroup label="Effects">
+                    <option value="blur">Blur</option>
+                  </optgroup>
+                </select>
+                <div className="flex items-center gap-1">
+                  <span className="text-[8px] text-slate-500">Duration:</span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="5"
+                    step="0.1"
+                    value={clip.transitionOut.duration || 1}
+                    onChange={(e) => onUpdate({ transitionOut: { ...clip.transitionOut, duration: parseFloat(e.target.value) } })}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => e.preventDefault()}
+                    className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                  />
+                  <span className="text-[8px] font-mono w-8 text-right">{(clip.transitionOut.duration || 1).toFixed(1)}s</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Transition In */}
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[8px] text-slate-400">TRANSITION IN</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (clip.transitionIn) {
+                    onUpdate({ transitionIn: null });
+                  } else {
+                    onUpdate({ transitionIn: { type: 'crossfade', duration: 1 } });
+                  }
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`text-[8px] px-1 py-0.5 rounded ${clip.transitionIn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+              >
+                {clip.transitionIn ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            {clip.transitionIn && (
+              <div className="space-y-1 pl-2 border-l-2 border-green-500/50">
+                <select
+                  value={clip.transitionIn.type || 'crossfade'}
+                  onChange={(e) => onUpdate({ transitionIn: { ...clip.transitionIn, type: e.target.value } })}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
+                >
+                  <optgroup label="Fade">
+                    <option value="crossfade">Crossfade</option>
+                  </optgroup>
+                  <optgroup label="Wipe">
+                    <option value="wipe-left">Wipe Left</option>
+                    <option value="wipe-right">Wipe Right</option>
+                    <option value="wipe-up">Wipe Up</option>
+                    <option value="wipe-down">Wipe Down</option>
+                  </optgroup>
+                  <optgroup label="Slide">
+                    <option value="slide-left">Slide Left</option>
+                    <option value="slide-right">Slide Right</option>
+                    <option value="slide-up">Slide Up</option>
+                    <option value="slide-down">Slide Down</option>
+                  </optgroup>
+                  <optgroup label="Zoom">
+                    <option value="zoom-in">Zoom In</option>
+                    <option value="zoom-out">Zoom Out</option>
+                  </optgroup>
+                  <optgroup label="Effects">
+                    <option value="blur">Blur</option>
+                  </optgroup>
+                </select>
+                <div className="flex items-center gap-1">
+                  <span className="text-[8px] text-slate-500">Duration:</span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="5"
+                    step="0.1"
+                    value={clip.transitionIn.duration || 1}
+                    onChange={(e) => onUpdate({ transitionIn: { ...clip.transitionIn, duration: parseFloat(e.target.value) } })}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => e.preventDefault()}
+                    className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-green-400"
+                  />
+                  <span className="text-[8px] font-mono w-8 text-right">{(clip.transitionIn.duration || 1).toFixed(1)}s</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="border-t border-slate-700 pt-1.5 mt-1.5 space-y-2">
           <div className="flex items-center gap-1">
             <input

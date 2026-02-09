@@ -42,6 +42,167 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
   const activeClips = getActiveClips();
 
+  // Detect transitions at current time
+  const getTransitionInfo = () => {
+    if (!project.clips || project.clips.length === 0) return null;
+
+    // Sort clips by startPos and track
+    const sortedClips = [...project.clips].sort((a, b) => {
+      const trackDiff = (a.track || 0) - (b.track || 0);
+      if (trackDiff !== 0) return trackDiff;
+      return (a.startPos || 0) - (b.startPos || 0);
+    });
+    
+    // Check all pairs of clips on the same track
+    for (let i = 0; i < sortedClips.length; i++) {
+      const clip1 = sortedClips[i];
+      const track1 = project.tracks?.find(t => t.id === (clip1.track || 0));
+      if (track1?.hidden || clip1.videoEnabled === false) continue;
+      
+      // Look for next clip on same track
+      for (let j = i + 1; j < sortedClips.length; j++) {
+        const clip2 = sortedClips[j];
+        const track2 = project.tracks?.find(t => t.id === (clip2.track || 0));
+        
+        // If different track, stop searching (clips are sorted by track)
+        if ((clip1.track || 0) !== (clip2.track || 0)) break;
+        if (track2?.hidden || clip2.videoEnabled === false) continue;
+        
+        const clip1Duration = ((clip1.trimEnd || clip1.endTime) - (clip1.trimStart || 0)) / (clip1.speed || 1);
+        const clip1End = (clip1.startPos || 0) + clip1Duration;
+        const clip2Start = clip2.startPos || 0;
+        
+        // Check if we're in a transition zone
+        const transition = clip1.transitionOut || clip2.transitionIn;
+        if (!transition || !transition.type || !transition.duration) continue;
+        
+        // Calculate transition boundaries
+        // Transition happens at the boundary between clips
+        // If clips overlap, transition happens during overlap
+        // If clips don't overlap, transition happens centered at the boundary
+        let transitionStart, transitionEnd;
+        
+        if (clip1End > clip2Start) {
+          // Clips overlap - transition happens during overlap period
+          transitionStart = Math.max(clip1End - transition.duration, clip2Start);
+          transitionEnd = Math.min(clip1End, clip2Start + transition.duration);
+        } else {
+          // Clips don't overlap - transition happens centered at boundary
+          const boundary = clip1End;
+          transitionStart = Math.max(0, boundary - transition.duration / 2);
+          transitionEnd = boundary + transition.duration / 2;
+        }
+        
+        // Check if currentTime is within transition zone
+        if (currentTime >= transitionStart && currentTime <= transitionEnd) {
+          const progress = (transitionEnd - transitionStart) > 0 
+            ? (currentTime - transitionStart) / (transitionEnd - transitionStart)
+            : 0;
+          const transitionResult = {
+            fromClip: clip1,
+            toClip: clip2,
+            transition,
+            progress: Math.max(0, Math.min(1, progress)),
+            transitionStart,
+            transitionEnd
+          };
+          // Debug logging
+          console.log('Transition detected:', {
+            type: transition.type,
+            duration: transition.duration,
+            progress: transitionResult.progress,
+            currentTime,
+            transitionStart,
+            transitionEnd,
+            clip1End,
+            clip2Start
+          });
+          return transitionResult;
+        }
+        
+        // If clip2 starts after clip1 ends, no need to check further clips
+        if (clip2Start >= clip1End) break;
+      }
+    }
+    
+    return null;
+  };
+
+  const transitionInfo = getTransitionInfo();
+
+  // Helper to create clip info object
+  const createClipInfo = (clip, time) => {
+    const start = clip.startPos || 0;
+    const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+    const clipEnd = start + clipDuration;
+    
+    // Calculate local time within the clip's trimmed range
+    let clipLocalTime;
+    if (time < start) {
+      // Before clip starts - use trimStart (beginning of visible portion)
+      clipLocalTime = clip.trimStart || 0;
+    } else if (time > clipEnd) {
+      // After clip ends - use trimEnd (end of visible portion)
+      clipLocalTime = clip.trimEnd || clip.endTime;
+    } else {
+      // Within clip - calculate based on timeline position
+      const relativeTime = time - start;
+      clipLocalTime = (relativeTime * (clip.speed || 1)) + (clip.trimStart || 0);
+    }
+    
+    // Clamp to valid range
+    clipLocalTime = Math.max(clip.trimStart || 0, Math.min(clipLocalTime, clip.trimEnd || clip.endTime));
+    
+    return {
+      clip,
+      clipStartTimeOnTimeline: start,
+      clipLocalTime,
+    };
+  };
+
+  // If in transition, get both clips (even if they're not in activeClips)
+  let transitionFromClip = null;
+  let transitionToClip = null;
+  
+  if (transitionInfo) {
+    // Get fromClip - might not be in activeClips if transition is happening at clip end
+    const fromClip = transitionInfo.fromClip;
+    const track = project.tracks?.find(t => t.id === (fromClip.track || 0));
+    if (!track?.hidden && fromClip.videoEnabled !== false) {
+      transitionFromClip = createClipInfo(fromClip, currentTime);
+      console.log('Transition fromClip:', {
+        id: fromClip.id,
+        clipLocalTime: transitionFromClip.clipLocalTime,
+        currentTime,
+        startPos: fromClip.startPos
+      });
+    }
+    
+    // Get toClip - might not be in activeClips if transition is happening before clip start
+    const toClip = transitionInfo.toClip;
+    const toTrack = project.tracks?.find(t => t.id === (toClip.track || 0));
+    if (!toTrack?.hidden && toClip.videoEnabled !== false) {
+      transitionToClip = createClipInfo(toClip, currentTime);
+      console.log('Transition toClip:', {
+        id: toClip.id,
+        clipLocalTime: transitionToClip.clipLocalTime,
+        currentTime,
+        startPos: toClip.startPos
+      });
+    }
+    
+    if (!transitionFromClip || !transitionToClip) {
+      console.warn('Transition detected but clips not found:', {
+        hasFromClip: !!transitionFromClip,
+        hasToClip: !!transitionToClip,
+        fromClipHidden: track?.hidden,
+        toClipHidden: toTrack?.hidden,
+        fromClipVideoEnabled: fromClip.videoEnabled,
+        toClipVideoEnabled: toClip.videoEnabled
+      });
+    }
+  }
+
   // Separation of concerns: Handle layers
   const videoClips = activeClips.filter(c => c.clip.videoEnabled !== false);
   const topVideoClip = videoClips[0] || null;
@@ -155,12 +316,56 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
                 onTimeUpdate={shouldDrive ? onTimeUpdate : null}
                 onPlayPause={onPlayPause}
                 project={project}
+                transitionInfo={transitionInfo && (transitionInfo.fromClip.id === info.clip.id || transitionInfo.toClip.id === info.clip.id) ? transitionInfo : null}
               />
             );
           })}
+          
+          {/* Audio for transition clips */}
+          {transitionInfo && transitionToClip && (
+            <>
+              {transitionFromClip && transitionFromClip.clip.audioEnabled !== false && !(transitionFromClip.clip.type === 'image' || transitionFromClip.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && (
+                <AudioLayer
+                  key={transitionFromClip.clip.id + '-audio-transition'}
+                  clipInfo={transitionFromClip}
+                  isPlaying={isPlaying}
+                  currentTime={currentTime}
+                  onTimeUpdate={null}
+                  onPlayPause={onPlayPause}
+                  project={project}
+                  transitionInfo={transitionInfo}
+                />
+              )}
+              {transitionToClip.clip.audioEnabled !== false && !(transitionToClip.clip.type === 'image' || transitionToClip.clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && (
+                <AudioLayer
+                  key={transitionToClip.clip.id + '-audio-transition'}
+                  clipInfo={transitionToClip}
+                  isPlaying={isPlaying}
+                  currentTime={currentTime}
+                  onTimeUpdate={onTimeUpdate}
+                  onPlayPause={onPlayPause}
+                  project={project}
+                  transitionInfo={transitionInfo}
+                />
+              )}
+            </>
+          )}
 
           {/* 2. Primary Video/Image Display */}
-          {topVideoClip ? (
+          {transitionInfo && transitionFromClip && transitionToClip ? (
+            <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
+              <TransitionLayer
+                fromClipInfo={transitionFromClip}
+                toClipInfo={transitionToClip}
+                transitionInfo={transitionInfo}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                onTimeUpdate={onTimeUpdate}
+                project={project}
+                registerDisplaySource={registerDisplaySource}
+              />
+            </div>
+          ) : topVideoClip && !transitionInfo ? (
             <div className="w-full h-full flex items-center justify-center">
               <VideoLayer
                 clipInfo={topVideoClip}
@@ -308,7 +513,7 @@ export default function VideoPlayer({ project, currentTime, isPlaying, onTimeUpd
 
 // Sub-components for better isolation
 
-function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project }) {
+function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, transitionInfo }) {
   const audioRef = useRef(null);
   const { clip, clipLocalTime } = clipInfo;
 
@@ -346,9 +551,23 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project })
         volume *= (1 - (relativeTime - fadeOutStart) / clip.fadeOut);
       }
 
+      // Transition crossfade for audio
+      if (transitionInfo) {
+        const isFromClip = transitionInfo.fromClip.id === clip.id;
+        const isToClip = transitionInfo.toClip.id === clip.id;
+        
+        if (isFromClip && transitionInfo.transition.type === 'crossfade') {
+          // Fade out during transition
+          volume *= (1 - transitionInfo.progress);
+        } else if (isToClip && transitionInfo.transition.type === 'crossfade') {
+          // Fade in during transition
+          volume *= transitionInfo.progress;
+        }
+      }
+
       audio.volume = Math.max(0, Math.min(1, volume));
     }
-  }, [isPlaying, currentTime, clip, project]);
+  }, [isPlaying, currentTime, clip, project, transitionInfo]);
 
   return (
     <audio
@@ -445,6 +664,269 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
         const newLocalTime = e.target.currentTime;
         const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
         if (Math.abs(newTimelineTime - currentTime) > 0.05) {
+          onTimeUpdate(newTimelineTime);
+        }
+      } : null}
+      preload="auto"
+    />
+  );
+}
+
+// Transition Layer for rendering transitions between clips
+function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, currentTime, onTimeUpdate, project, registerDisplaySource }) {
+  const { transition, progress } = transitionInfo;
+  const { clip: fromClip, clipLocalTime: fromLocalTime } = fromClipInfo;
+  const { clip: toClip, clipLocalTime: toLocalTime } = toClipInfo;
+  
+  const isFromImage = fromClip.type === 'image' || fromClip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const isToImage = toClip.type === 'image' || toClip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const fromVideoUrl = getVideoUrl(fromClip.videoId);
+  const toVideoUrl = getVideoUrl(toClip.videoId);
+
+  const getFilterStyle = (filter) => {
+    switch (filter) {
+      case 'grayscale': return 'grayscale(100%)';
+      case 'sepia': return 'sepia(100%)';
+      case 'invert': return 'invert(100%)';
+      case 'blur': return 'blur(3px)';
+      case 'brightness': return 'brightness(1.3)';
+      case 'darken': return 'brightness(0.7)';
+      case 'contrast': return 'contrast(1.5)';
+      case 'saturate': return 'saturate(1.8)';
+      case 'desaturate': return 'saturate(0.3)';
+      case 'hue-rotate': return 'hue-rotate(90deg)';
+      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
+      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
+      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
+      default: return 'none';
+    }
+  };
+
+  // Calculate transition styles based on type
+  const getTransitionStyles = () => {
+    const fromStyle = { filter: getFilterStyle(fromClip.filter) };
+    const toStyle = { filter: getFilterStyle(toClip.filter) };
+
+    switch (transition.type) {
+      case 'crossfade':
+        fromStyle.opacity = 1 - progress;
+        toStyle.opacity = progress;
+        break;
+      
+      case 'wipe-left':
+        fromStyle.clipPath = `inset(0 ${progress * 100}% 0 0)`;
+        toStyle.clipPath = `inset(0 0 0 ${progress * 100}%)`;
+        break;
+      
+      case 'wipe-right':
+        fromStyle.clipPath = `inset(0 0 0 ${progress * 100}%)`;
+        toStyle.clipPath = `inset(0 ${progress * 100}% 0 0)`;
+        break;
+      
+      case 'wipe-up':
+        fromStyle.clipPath = `inset(${progress * 100}% 0 0 0)`;
+        toStyle.clipPath = `inset(0 0 ${progress * 100}% 0)`;
+        break;
+      
+      case 'wipe-down':
+        fromStyle.clipPath = `inset(0 0 ${progress * 100}% 0)`;
+        toStyle.clipPath = `inset(${progress * 100}% 0 0 0)`;
+        break;
+      
+      case 'slide-left':
+        fromStyle.transform = `translateX(${-progress * 100}%)`;
+        toStyle.transform = `translateX(${(1 - progress) * 100}%)`;
+        break;
+      
+      case 'slide-right':
+        fromStyle.transform = `translateX(${progress * 100}%)`;
+        toStyle.transform = `translateX(${-(1 - progress) * 100}%)`;
+        break;
+      
+      case 'slide-up':
+        fromStyle.transform = `translateY(${-progress * 100}%)`;
+        toStyle.transform = `translateY(${(1 - progress) * 100}%)`;
+        break;
+      
+      case 'slide-down':
+        fromStyle.transform = `translateY(${progress * 100}%)`;
+        toStyle.transform = `translateY(${-(1 - progress) * 100}%)`;
+        break;
+      
+      case 'zoom-in':
+        fromStyle.transform = `scale(${1 + progress})`;
+        fromStyle.opacity = 1 - progress;
+        toStyle.transform = `scale(${1 - (1 - progress)})`;
+        toStyle.opacity = progress;
+        break;
+      
+      case 'zoom-out':
+        fromStyle.transform = `scale(${1 - progress})`;
+        fromStyle.opacity = 1 - progress;
+        toStyle.transform = `scale(${progress})`;
+        toStyle.opacity = progress;
+        break;
+      
+      case 'blur':
+        fromStyle.filter = `${getFilterStyle(fromClip.filter)} blur(${(1 - progress) * 10}px)`;
+        fromStyle.opacity = 1 - progress;
+        toStyle.filter = `${getFilterStyle(toClip.filter)} blur(${progress * 10}px)`;
+        toStyle.opacity = progress;
+        break;
+      
+      default:
+        fromStyle.opacity = 1 - progress;
+        toStyle.opacity = progress;
+    }
+
+    return { fromStyle, toStyle };
+  };
+
+  const { fromStyle, toStyle } = getTransitionStyles();
+
+  // Render from clip
+  const renderFromClip = () => {
+    if (isFromImage) {
+      return (
+        <img
+          src={fromVideoUrl}
+          alt=""
+          className="max-w-full max-h-full object-contain"
+        />
+      );
+    }
+    
+    return (
+      <TransitionVideoLayer
+        clip={fromClip}
+        clipLocalTime={fromLocalTime}
+        isPlaying={isPlaying}
+        onTimeUpdate={null}
+        project={project}
+      />
+    );
+  };
+
+  // Render to clip
+  const renderToClip = () => {
+    if (isToImage) {
+      return (
+        <img
+          src={toVideoUrl}
+          alt=""
+          className="max-w-full max-h-full object-contain"
+        />
+      );
+    }
+    
+    return (
+      <TransitionVideoLayer
+        clip={toClip}
+        clipLocalTime={toLocalTime}
+        isPlaying={isPlaying}
+        onTimeUpdate={onTimeUpdate}
+        project={project}
+        registerDisplaySource={registerDisplaySource}
+      />
+    );
+  };
+
+  return (
+    <>
+      {/* Debug indicator - remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="absolute top-2 left-2 bg-blue-600/80 text-white text-xs px-2 py-1 rounded z-50">
+          Transition: {transition.type} ({Math.round(progress * 100)}%)
+        </div>
+      )}
+      
+      {/* From Clip */}
+      <div className="absolute inset-0 flex items-center justify-center" style={fromStyle}>
+        {renderFromClip()}
+      </div>
+
+      {/* To Clip */}
+      <div className="absolute inset-0 flex items-center justify-center" style={toStyle}>
+        {renderToClip()}
+      </div>
+    </>
+  );
+}
+
+// Helper component for rendering video in transitions
+function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
+  const videoRef = useRef(null);
+  const mediaRef = useRef(null);
+  const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const videoUrl = getVideoUrl(clip.videoId);
+
+  useEffect(() => {
+    if (registerDisplaySource) {
+      registerDisplaySource(mediaRef.current);
+      return () => registerDisplaySource(null);
+    }
+  }, [registerDisplaySource, isImage]);
+
+  const getFilterStyle = (filter) => {
+    switch (filter) {
+      case 'grayscale': return 'grayscale(100%)';
+      case 'sepia': return 'sepia(100%)';
+      case 'invert': return 'invert(100%)';
+      case 'blur': return 'blur(3px)';
+      case 'brightness': return 'brightness(1.3)';
+      case 'darken': return 'brightness(0.7)';
+      case 'contrast': return 'contrast(1.5)';
+      case 'saturate': return 'saturate(1.8)';
+      case 'desaturate': return 'saturate(0.3)';
+      case 'hue-rotate': return 'hue-rotate(90deg)';
+      case 'vintage': return 'sepia(0.4) contrast(1.1) brightness(0.9)';
+      case 'cool': return 'hue-rotate(180deg) saturate(0.8)';
+      case 'warm': return 'sepia(0.3) saturate(1.2) brightness(1.05)';
+      default: return 'none';
+    }
+  };
+
+  useEffect(() => {
+    if (isImage) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPlaying) {
+      video.play().catch(() => { });
+    } else {
+      video.pause();
+    }
+
+    if (Math.abs(video.currentTime - clipLocalTime) > 0.15) {
+      video.currentTime = clipLocalTime;
+    }
+
+    video.playbackRate = clip.speed || 1;
+  }, [isPlaying, clipLocalTime, clip.speed, isImage]);
+
+  if (isImage) {
+    return (
+      <img
+        ref={mediaRef}
+        src={videoUrl}
+        className="max-w-full max-h-full object-contain"
+        style={{ filter: getFilterStyle(clip.filter) }}
+        alt=""
+      />
+    );
+  }
+
+  return (
+    <video
+      ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
+      src={videoUrl}
+      className="max-w-full max-h-full"
+      style={{ filter: getFilterStyle(clip.filter) }}
+      muted
+      onTimeUpdate={onTimeUpdate ? (e) => {
+        const newLocalTime = e.target.currentTime;
+        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
+        if (Math.abs(newTimelineTime - (clip.startPos || 0) - clipLocalTime) > 0.05) {
           onTimeUpdate(newTimelineTime);
         }
       } : null}

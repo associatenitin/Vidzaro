@@ -122,7 +122,9 @@ export function useProject() {
       videoEnabled: true,
       audioEnabled: asset.type !== 'image',
       fadeIn: 0,
-      fadeOut: 0
+      fadeOut: 0,
+      transitionOut: null, // { type: 'crossfade' | 'wipe-left' | 'wipe-right' | 'wipe-up' | 'wipe-down' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'blur', duration: number }
+      transitionIn: null // same structure
     };
 
     setProjectWithHistory((prev) => ({
@@ -271,6 +273,8 @@ export function useProject() {
       startPos: clip.startPos !== undefined ? clip.startPos : 0,
       fadeIn: clip.fadeIn !== undefined ? clip.fadeIn : 0,
       fadeOut: clip.fadeOut !== undefined ? clip.fadeOut : 0,
+      transitionOut: clip.transitionOut !== undefined ? clip.transitionOut : null,
+      transitionIn: clip.transitionIn !== undefined ? clip.transitionIn : null,
     }));
 
     // Merge loaded data with defaults to ensure all required fields are present

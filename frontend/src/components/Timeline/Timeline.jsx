@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import Clip from './Clip';
+import Transition from './Transition';
 
 const PIXELS_PER_SECOND = 50; // Base zoom level
 
@@ -50,6 +51,63 @@ export default function Timeline({
     { id: 2, label: 'Audio 1', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
     { id: 3, label: 'Audio 2', type: 'audio', muted: false, locked: false, hidden: false, height: 60 },
   ];
+
+  // Detect transitions between overlapping clips
+  const detectTransitions = useMemo(() => {
+    const transitions = [];
+    
+    tracks.forEach(track => {
+      const trackClips = sortedClips
+        .filter(clip => (clip.track || 0) === track.id)
+        .sort((a, b) => (a.startPos || 0) - (b.startPos || 0));
+      
+      for (let i = 0; i < trackClips.length - 1; i++) {
+        const clip1 = trackClips[i];
+        const clip2 = trackClips[i + 1];
+        
+        const clip1Duration = ((clip1.trimEnd || clip1.endTime) - (clip1.trimStart || 0)) / (clip1.speed || 1);
+        const clip1End = (clip1.startPos || 0) + clip1Duration;
+        const clip2Start = clip2.startPos || 0;
+        
+        // Check if clips overlap or are adjacent (within 0.1s)
+        if (clip1End > clip2Start - 0.1) {
+          const overlapDuration = Math.min(clip1End - clip2Start, 5); // Cap at 5 seconds
+          
+          // Use existing transition if set, prefer transitionOut from clip1, then transitionIn from clip2
+          let transition = clip1.transitionOut || clip2.transitionIn;
+          
+          if (!transition && overlapDuration > 0.1) {
+            // Auto-create transition when clips overlap
+            transition = {
+              type: 'crossfade',
+              duration: Math.max(0.1, Math.min(overlapDuration, 2)) // Default 0.1-2s
+            };
+          }
+          
+          if (transition && transition.duration > 0) {
+            const transitionStart = Math.max(clip1End - transition.duration, clip2Start);
+            const transitionEnd = Math.min(clip1End, clip2Start + transition.duration);
+            const actualDuration = transitionEnd - transitionStart;
+            
+            transitions.push({
+              id: `transition-${clip1.id}-${clip2.id}`,
+              fromClip: clip1,
+              toClip: clip2,
+              track: track.id,
+              transition: {
+                type: transition.type,
+                duration: actualDuration
+              },
+              startTime: transitionStart,
+              endTime: transitionEnd
+            });
+          }
+        }
+      }
+    });
+    
+    return transitions;
+  }, [sortedClips, tracks]);
 
   // Set up native drop listeners on track elements to bypass DndContext
   useEffect(() => {
@@ -663,6 +721,33 @@ export default function Timeline({
                               onSelect={() => onClipSelect && onClipSelect(clip.id)}
                             />
                           </div>
+                        );
+                      })}
+
+                    {/* Transitions */}
+                    {!track.hidden && detectTransitions
+                      .filter(trans => trans.track === track.id)
+                      .map(trans => {
+                        const transitionWidth = trans.transition.duration * PIXELS_PER_SECOND * zoom;
+                        const transitionLeft = trans.startTime * PIXELS_PER_SECOND * zoom;
+                        return (
+                          <Transition
+                            key={trans.id}
+                            transition={trans.transition}
+                            left={transitionLeft}
+                            width={transitionWidth}
+                            pixelsPerSecond={PIXELS_PER_SECOND * zoom}
+                            onUpdate={(updates) => {
+                              // Update the transition on the fromClip
+                              onClipUpdate(trans.fromClip.id, { transitionOut: { ...trans.transition, ...updates } });
+                            }}
+                            onEdit={() => {
+                              // Select the fromClip to edit transition in settings panel
+                              if (onClipSelect) onClipSelect(trans.fromClip.id);
+                            }}
+                            fromClip={trans.fromClip}
+                            toClip={trans.toClip}
+                          />
                         );
                       })}
                   </div>
