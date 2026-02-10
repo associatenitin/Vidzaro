@@ -18,6 +18,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const [draggingAutomationIndex, setDraggingAutomationIndex] = useState(null);
   const [hoveredAutomationIndex, setHoveredAutomationIndex] = useState(null);
+  const [hoveredAutomationArea, setHoveredAutomationArea] = useState(false);
   const [dragPreviewValue, setDragPreviewValue] = useState(null);
   const automationSvgRef = useRef(null);
 
@@ -246,6 +247,9 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
   const handleAutomationMouseDown = (e) => {
     if (!hasAudio || !isSelected) return;
+    // Only allow left-click (button 0) - right-click should open context menu
+    if (e.button !== 0) return;
+    
     const svg = automationSvgRef.current;
     if (!svg) return;
 
@@ -537,6 +541,8 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                   preserveAspectRatio="none"
                   className={`absolute inset-1 rounded pointer-events-auto ${isSelected ? 'cursor-crosshair' : 'pointer-events-none'}`}
                   onMouseDown={isSelected ? handleAutomationMouseDown : undefined}
+                  onMouseEnter={() => isSelected && setHoveredAutomationArea(true)}
+                  onMouseLeave={() => setHoveredAutomationArea(false)}
                 >
                   {/* Center line at 100% volume (base volume from slider) */}
                   <line
@@ -634,9 +640,9 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                   )}
                 </svg>
 
-                {/* Legend/tooltip explaining volume relationship */}
-                {isSelected && automationKeyframes.length > 0 && (
-                  <div className="absolute bottom-1 left-1 bg-slate-900/90 text-slate-200 text-[9px] px-1.5 py-0.5 rounded border border-slate-600/50 pointer-events-none z-10">
+                {/* Legend/tooltip explaining volume relationship - only show when hovering or dragging */}
+                {isSelected && automationKeyframes.length > 0 && (hoveredAutomationArea || draggingAutomationIndex !== null) && (
+                  <div className="absolute bottom-1 left-1 bg-slate-900/90 text-slate-200 text-[9px] px-1.5 py-0.5 rounded border border-slate-600/50 pointer-events-none z-10 animate-in fade-in duration-150">
                     <div className="font-semibold">Volume Automation</div>
                     <div className="text-slate-400">
                       Base: {Math.round((clip.volume || 1) * 100)}% • Drag points to adjust
