@@ -32,10 +32,17 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
       .sort((a, b) => (b.track || 0) - (a.track || 0)) // Higher track on top
       .map(clip => {
         const start = clip.startPos || 0;
+        const relativeTime = currentTime - start;
+        const speed = clip.speed || 1;
+        const trimStart = clip.trimStart || 0;
+        const trimEnd = clip.trimEnd || clip.endTime;
+        const clipLocalTime = clip.reversed
+          ? trimEnd - relativeTime * speed
+          : relativeTime * speed + trimStart;
         return {
           clip,
           clipStartTimeOnTimeline: start,
-          clipLocalTime: (currentTime - start) * (clip.speed || 1) + (clip.trimStart || 0),
+          clipLocalTime,
         };
       });
   };
@@ -138,20 +145,22 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
 
     // Calculate local time within the clip's trimmed range
     let clipLocalTime;
+    const clipTrimStart = clip.trimStart || 0;
+    const clipTrimEnd = clip.trimEnd || clip.endTime;
+    const speed = clip.speed || 1;
     if (time < start) {
-      // Before clip starts - use trimStart (beginning of visible portion)
-      clipLocalTime = clip.trimStart || 0;
+      clipLocalTime = clip.reversed ? clipTrimEnd : clipTrimStart;
     } else if (time > clipEnd) {
-      // After clip ends - use trimEnd (end of visible portion)
-      clipLocalTime = clip.trimEnd || clip.endTime;
+      clipLocalTime = clip.reversed ? clipTrimStart : clipTrimEnd;
     } else {
-      // Within clip - calculate based on timeline position
       const relativeTime = time - start;
-      clipLocalTime = (relativeTime * (clip.speed || 1)) + (clip.trimStart || 0);
+      clipLocalTime = clip.reversed
+        ? clipTrimEnd - relativeTime * speed
+        : relativeTime * speed + clipTrimStart;
     }
 
     // Clamp to valid range
-    clipLocalTime = Math.max(clip.trimStart || 0, Math.min(clipLocalTime, clip.trimEnd || clip.endTime));
+    clipLocalTime = Math.max(clipTrimStart, Math.min(clipLocalTime, clipTrimEnd));
 
     return {
       clip,
@@ -210,6 +219,23 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
   // Show selected library asset in player whenever one is selected (from Media Library)
   const showPreview = !!previewAsset;
 
+  // Drive timeline forward when playing a reversed clip (browsers don't support negative playbackRate)
+  // Use fixed 30fps interval for consistent, predictable reverse motion
+  const hasReversedActiveClip = !showPreview && activeClips.some(c => c.clip.reversed);
+  const timeRef = useRef({ currentTime, totalDuration });
+  timeRef.current = { currentTime, totalDuration };
+  useEffect(() => {
+    if (!isPlaying || !hasReversedActiveClip || !onTimeUpdate) return;
+    const REVERSE_FPS = 30;
+    const intervalMs = 1000 / REVERSE_FPS;
+    const tick = () => {
+      const { currentTime: ct, totalDuration: td } = timeRef.current;
+      onTimeUpdate(Math.min(td, ct + intervalMs / 1000));
+    };
+    const id = setInterval(tick, intervalMs);
+    return () => clearInterval(id);
+  }, [isPlaying, hasReversedActiveClip, onTimeUpdate]);
+
   // Reset preview time when asset changes
   useEffect(() => {
     // handled in App.jsx now
@@ -228,21 +254,12 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
     const rect = progressRef.current.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const newTime = ratio * displayDuration;
-
-    if (showPreview) {
-      setPreviewTime(newTime);
-    } else if (onTimeUpdate) {
-      onTimeUpdate(newTime);
-    }
+    if (onTimeUpdate) onTimeUpdate(newTime);
   };
 
   const handleSeek = (newTime) => {
     const clampedTime = Math.max(0, Math.min(newTime, displayDuration));
-    if (showPreview) {
-      setPreviewTime(clampedTime);
-    } else if (onTimeUpdate) {
-      onTimeUpdate(clampedTime);
-    }
+    if (onTimeUpdate) onTimeUpdate(clampedTime);
   };
 
   const displayTime = showPreview ? previewTime : currentTime;
@@ -527,17 +544,22 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
     const audio = audioRef.current;
     if (!audio) return;
 
-    // Play/Pause
-    if (isPlaying) audio.play().catch(() => { });
-    else audio.pause();
+    // Play/Pause (for reversed: pause native playback, RAF drives timeline + manual seek)
+    if (clip.reversed) {
+      audio.pause();
+    } else if (isPlaying) {
+      audio.play().catch(() => { });
+    } else {
+      audio.pause();
+    }
 
     // Sync Time
     if (Math.abs(audio.currentTime - clipLocalTime) > 0.15) {
       audio.currentTime = clipLocalTime;
     }
 
-    // Apply Props
-    audio.playbackRate = clip.speed || 1;
+    // Apply playback rate (use 1 for reversed; RAF + seek handle reverse playback)
+    audio.playbackRate = clip.reversed ? 1 : (clip.speed || 1);
 
     // Calculate Fade/Volume
     const track = project.tracks?.find(t => t.id === (clip.track || 0));
@@ -581,8 +603,13 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
       src={getVideoUrl(clip.videoId)}
       onTimeUpdate={onTimeUpdate ? (e) => {
         const newLocalTime = e.target.currentTime;
-        // Convert local video time back to timeline time
-        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
+        const start = clip.startPos || 0;
+        const speed = clip.speed || 1;
+        const trimStart = clip.trimStart || 0;
+        const trimEnd = clip.trimEnd || clip.endTime;
+        const newTimelineTime = clip.reversed
+          ? start + (trimEnd - newLocalTime) / speed
+          : (newLocalTime - trimStart) / speed + start;
         if (Math.abs(newTimelineTime - currentTime) > 0.05) {
           onTimeUpdate(newTimelineTime);
         }
@@ -616,8 +643,10 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
     const video = videoRef.current;
     if (!video) return;
 
-    // Play/Pause sync
-    if (isPlaying) {
+    // Play/Pause (for reversed: pause native playback, RAF drives timeline + manual seek)
+    if (clip.reversed) {
+      video.pause();
+    } else if (isPlaying) {
       video.play().catch(() => { });
     } else {
       video.pause();
@@ -628,9 +657,9 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
       video.currentTime = clipLocalTime;
     }
 
-    // Apply playback rate
-    video.playbackRate = clip.speed || 1;
-  }, [isPlaying, clipLocalTime, clip.speed, isImage]);
+    // Apply playback rate (use 1 for reversed; RAF + seek handle reverse playback)
+    video.playbackRate = clip.reversed ? 1 : (clip.speed || 1);
+  }, [isPlaying, clipLocalTime, clip.speed, clip.reversed, isImage]);
 
   if (isImage) {
     return (
@@ -653,7 +682,13 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
       muted // We handle audio in AudioLayer
       onTimeUpdate={onTimeUpdate ? (e) => {
         const newLocalTime = e.target.currentTime;
-        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
+        const start = clip.startPos || 0;
+        const speed = clip.speed || 1;
+        const trimStart = clip.trimStart || 0;
+        const trimEnd = clip.trimEnd || clip.endTime;
+        const newTimelineTime = clip.reversed
+          ? start + (trimEnd - newLocalTime) / speed
+          : (newLocalTime - trimStart) / speed + start;
         if (Math.abs(newTimelineTime - currentTime) > 0.05) {
           onTimeUpdate(newTimelineTime);
         }
@@ -776,6 +811,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
       <TransitionVideoLayer
         clip={fromClip}
         clipLocalTime={fromLocalTime}
+        currentTime={currentTime}
         isPlaying={isPlaying}
         onTimeUpdate={null}
         project={project}
@@ -799,6 +835,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
       <TransitionVideoLayer
         clip={toClip}
         clipLocalTime={toLocalTime}
+        currentTime={currentTime}
         isPlaying={isPlaying}
         onTimeUpdate={onTimeUpdate}
         project={project}
@@ -830,7 +867,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
 }
 
 // Helper component for rendering video in transitions
-function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
+function TransitionVideoLayer({ clip, clipLocalTime, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
   const videoRef = useRef(null);
   const mediaRef = useRef(null);
   const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
@@ -852,7 +889,9 @@ function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, pr
     const video = videoRef.current;
     if (!video) return;
 
-    if (isPlaying) {
+    if (clip.reversed) {
+      video.pause();
+    } else if (isPlaying) {
       video.play().catch(() => { });
     } else {
       video.pause();
@@ -862,8 +901,8 @@ function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, pr
       video.currentTime = clipLocalTime;
     }
 
-    video.playbackRate = clip.speed || 1;
-  }, [isPlaying, clipLocalTime, clip.speed, isImage]);
+    video.playbackRate = clip.reversed ? 1 : (clip.speed || 1);
+  }, [isPlaying, clipLocalTime, clip.speed, clip.reversed, isImage]);
 
   if (isImage) {
     return (
@@ -886,8 +925,14 @@ function TransitionVideoLayer({ clip, clipLocalTime, isPlaying, onTimeUpdate, pr
       muted
       onTimeUpdate={onTimeUpdate ? (e) => {
         const newLocalTime = e.target.currentTime;
-        const newTimelineTime = (newLocalTime - (clip.trimStart || 0)) / (clip.speed || 1) + (clip.startPos || 0);
-        if (Math.abs(newTimelineTime - (clip.startPos || 0) - clipLocalTime) > 0.05) {
+        const start = clip.startPos || 0;
+        const speed = clip.speed || 1;
+        const trimStart = clip.trimStart || 0;
+        const trimEnd = clip.trimEnd || clip.endTime;
+        const newTimelineTime = clip.reversed
+          ? start + (trimEnd - newLocalTime) / speed
+          : (newLocalTime - trimStart) / speed + start;
+        if (currentTime != null && Math.abs(newTimelineTime - currentTime) > 0.05) {
           onTimeUpdate(newTimelineTime);
         }
       } : null}

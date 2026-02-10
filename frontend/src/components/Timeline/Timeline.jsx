@@ -37,7 +37,8 @@ export default function Timeline({
   onSaveCustomFilter,
   onDeleteCustomFilter,
   onUpdateCustomFilter,
-  onAddAsset
+  onAddAsset,
+  onReverseClips
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -819,6 +820,19 @@ export default function Timeline({
           >
             🧲 Snap {snapEnabled ? 'On' : 'Off'}
           </button>
+          {onReverseClips && (
+            <button
+              onClick={onReverseClips}
+              disabled={selectedClipIds.length === 0}
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${selectedClipIds.length > 0 ? 'text-slate-300 hover:bg-slate-700 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`}
+              title="Reverse selected video clip(s)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Reverse
+            </button>
+          )}
         </div>
         <div className="text-xs text-slate-400 font-mono">
           TC: {formatTime(currentTime)}

@@ -27,6 +27,7 @@ function App() {
     addClip,
     removeClip,
     updateClip,
+    updateClipsBatch,
     reorderClips,
     splitClip,
     detachAudio,
@@ -290,6 +291,15 @@ function App() {
 
   const handleOpenGenAI = () => {
     setShowGenAIDialog(true);
+  };
+
+  const handleReverseClips = () => {
+    if (selectedClipIds.length === 0) return;
+    const selectedClips = project.clips.filter(c => selectedClipIds.includes(c.id));
+    const isImage = (clip) => clip.type === 'image' || (clip.filename && /\.(jpg|jpeg|png|gif|webp)$/i.test(clip.filename));
+    const videoClips = selectedClips.filter(c => !isImage(c));
+    const clipUpdates = videoClips.map(clip => ({ clipId: clip.id, updates: { reversed: !clip.reversed } }));
+    updateClipsBatch(clipUpdates);
   };
 
   // Keyboard shortcuts
@@ -578,6 +588,7 @@ function App() {
           onSaveCustomFilter={addCustomFilter}
           onDeleteCustomFilter={removeCustomFilter}
           onUpdateCustomFilter={updateCustomFilter}
+          onReverseClips={handleReverseClips}
         />
       </div>
 

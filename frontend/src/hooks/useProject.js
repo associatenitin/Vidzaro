@@ -156,6 +156,20 @@ export function useProject() {
     }));
   }, [setProjectWithHistory]);
 
+  const updateClipsBatch = useCallback((clipUpdates) => {
+    setProjectWithHistory((prev) => {
+      const byId = new Map(clipUpdates.map(u => [u.clipId, u.updates]));
+      return {
+        ...prev,
+        clips: prev.clips.map((clip) => {
+          const u = byId.get(clip.id);
+          return u ? { ...clip, ...u } : clip;
+        }),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }, [setProjectWithHistory]);
+
   const reorderClips = useCallback((newOrder) => {
     setProjectWithHistory((prev) => ({
       ...prev,
@@ -474,6 +488,7 @@ export function useProject() {
     addClip,
     removeClip,
     updateClip,
+    updateClipsBatch,
     reorderClips,
     splitClip,
     detachAudio,

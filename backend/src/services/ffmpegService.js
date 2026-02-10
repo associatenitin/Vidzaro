@@ -285,6 +285,11 @@ export async function exportVideo(projectData, outputPath, tempDir) {
       let videoFilters = [];
       let audioFilters = [];
 
+      if (clip.reversed) {
+        videoFilters.unshift('reverse');
+        audioFilters.unshift('areverse');
+      }
+
       if (clip.speed && clip.speed !== 1) {
         videoFilters.push(`setpts=${1 / clip.speed}*PTS`);
         audioFilters.push(`atempo=${clip.speed}`);

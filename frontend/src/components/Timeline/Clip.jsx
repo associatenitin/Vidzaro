@@ -307,6 +307,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
           <div className="flex items-center gap-1">
             <span className="bg-black/50 px-1 rounded">{formatDuration(clipDuration)}</span>
+            {clip.reversed && (
+              <span className="bg-cyan-600 text-white px-1 rounded uppercase text-[8px] font-bold">
+                REV
+              </span>
+            )}
             {clip.filter && (
               <span className="bg-yellow-500 text-black px-1 rounded uppercase text-[8px] font-bold">
                 {getFilterDisplayName(clip.filter, project)}
