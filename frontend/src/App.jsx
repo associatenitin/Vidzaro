@@ -215,7 +215,7 @@ function App() {
           const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
           const trimStartTime = (targetClip.trimStart || 0) + relativeTime;
           const endTime = trimRange?.clipId === targetClip.id ? trimRange.endTime : (targetClip.trimEnd || targetClip.endTime);
-          
+
           setTrimRange({
             clipId: targetClip.id,
             startTime: Math.min(trimStartTime, endTime - 0.1), // Ensure start < end
@@ -239,7 +239,7 @@ function App() {
       const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
       const trimStartTime = (targetClip.trimStart || 0) + relativeTime;
       const endTime = trimRange?.clipId === targetClip.id ? trimRange.endTime : (targetClip.trimEnd || targetClip.endTime);
-      
+
       setTrimRange({
         clipId: targetClip.id,
         startTime: Math.min(trimStartTime, endTime - 0.1), // Ensure start < end
@@ -265,7 +265,7 @@ function App() {
           const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
           const trimEndTime = (targetClip.trimStart || 0) + relativeTime;
           const startTime = trimRange?.clipId === targetClip.id ? trimRange.startTime : (targetClip.trimStart || 0);
-          
+
           setTrimRange({
             clipId: targetClip.id,
             startTime: startTime,
@@ -289,7 +289,7 @@ function App() {
       const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
       const trimEndTime = (targetClip.trimStart || 0) + relativeTime;
       const startTime = trimRange?.clipId === targetClip.id ? trimRange.startTime : (targetClip.trimStart || 0);
-      
+
       setTrimRange({
         clipId: targetClip.id,
         startTime: startTime,
@@ -471,7 +471,7 @@ function App() {
       // First, check for selected clip on timeline
       if (selectedClipIds.length > 0) {
         targetClip = project.clips.find(c => c.id === selectedClipIds[0]);
-      } 
+      }
       // Then check for clip at current time
       else {
         const clipAtTime = project.clips.find(c => {
@@ -481,7 +481,7 @@ function App() {
         });
         targetClip = clipAtTime;
       }
-      
+
       // If no clip found, check if there's a selected asset from media library
       if (!targetClip && selectedAsset) {
         targetAsset = selectedAsset;
@@ -575,7 +575,7 @@ function App() {
       console.error('Clip missing videoId:', targetClip);
       console.error('Available assets:', project.assets);
       console.error('Selected asset:', selectedAsset);
-      
+
       // Try one more time to resolve from asset
       if (targetClip.assetId) {
         const asset = project.assets.find(a => a.id === targetClip.assetId);
@@ -1031,7 +1031,7 @@ function App() {
 
       {showMotionTrackingDialog && motionTrackingClip && (
         <MotionTrackingDialog
-          clip={motionTrackingClip}
+          clip={project.clips.find(c => c.id === motionTrackingClip.id) || motionTrackingClip}
           project={project}
           currentTime={currentTime}
           onClose={() => {
@@ -1039,26 +1039,45 @@ function App() {
             setMotionTrackingClip(null);
           }}
           onSave={(trackOrUpdate) => {
+            const isTemp = motionTrackingClip.id.startsWith('temp-');
+            let targetClipId = motionTrackingClip.id;
+
+            // If it's a temporary clip from library, add it to timeline first
+            if (isTemp) {
+              const asset = project.assets.find(a => a.id === motionTrackingClip.assetId);
+              if (asset) {
+                const newClip = addClip(asset, { track: 0, time: currentTime });
+                targetClipId = newClip.id;
+                setMotionTrackingClip(newClip);
+              } else {
+                console.error('Could not find asset for temp clip:', motionTrackingClip);
+                return;
+              }
+            }
+
+            const currentClip = project.clips.find(c => c.id === targetClipId) || motionTrackingClip;
+
             if (trackOrUpdate.action === 'updateAll') {
-              // Update all tracks
+              // Update or add remaining tracks
               trackOrUpdate.tracks.forEach(track => {
-                const existing = motionTrackingClip.motionTracks?.find(et => et.id === track.id);
+                const existing = currentClip.motionTracks?.find(et => et.id === track.id);
                 if (existing) {
-                  updateMotionTrack(motionTrackingClip.id, track.id, track);
+                  updateMotionTrack(targetClipId, track.id, track);
                 } else {
-                  addMotionTrackToClip(motionTrackingClip.id, track);
+                  addMotionTrackToClip(targetClipId, track);
                 }
               });
-              // Remove tracks that are no longer in the list
-              const currentTrackIds = trackOrUpdate.tracks.map(t => t.id);
-              motionTrackingClip.motionTracks?.forEach(track => {
-                if (!currentTrackIds.includes(track.id)) {
-                  removeMotionTrack(motionTrackingClip.id, track.id);
+
+              // Remove tracks that were deleted in the dialog
+              const nextTrackIds = trackOrUpdate.tracks.map(t => t.id);
+              currentClip.motionTracks?.forEach(track => {
+                if (!nextTrackIds.includes(track.id)) {
+                  removeMotionTrack(targetClipId, track.id);
                 }
               });
             } else {
               // Add new track
-              addMotionTrackToClip(motionTrackingClip.id, trackOrUpdate);
+              addMotionTrackToClip(targetClipId, trackOrUpdate);
             }
           }}
           onTimeUpdate={setCurrentTime}

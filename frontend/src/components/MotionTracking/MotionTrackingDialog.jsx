@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motionTrackingTrack, motionTrackingGetProgress, adminGetServices, adminMorphStart } from '../../services/api';
 import { getVideoUrl } from '../../services/api';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,9 +16,60 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
   const [trackingQuality, setTrackingQuality] = useState(null); // { confidence, quality }
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [videoBox, setVideoBox] = useState(null);
   const [showKeyframeEditor, setShowKeyframeEditor] = useState(false);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
+  const videoBoxRef = useRef(null);
+  const dragRef = useRef(null);
+  const [isDraggingTarget, setIsDraggingTarget] = useState(false);
+  const targetRegionRef = useRef(null);
+
+  useEffect(() => {
+    targetRegionRef.current = targetRegion;
+  }, [targetRegion]);
+
+  const updateVideoBox = useCallback(() => {
+    if (!videoRef.current || !containerRef.current) return;
+    const video = videoRef.current;
+    const container = containerRef.current;
+
+    const intrinsicWidth = video.videoWidth;
+    const intrinsicHeight = video.videoHeight;
+    const displayWidth = container.clientWidth;
+    const displayHeight = container.clientHeight;
+
+    if (!intrinsicWidth || !intrinsicHeight || !displayWidth || !displayHeight) return;
+
+    const videoRatio = intrinsicWidth / intrinsicHeight;
+    const containerRatio = displayWidth / displayHeight;
+
+    let width, height, left, top;
+
+    if (videoRatio > containerRatio) {
+      width = displayWidth;
+      height = displayWidth / videoRatio;
+      left = 0;
+      top = (displayHeight - height) / 2;
+    } else {
+      height = displayHeight;
+      width = displayHeight * videoRatio;
+      top = 0;
+      left = (displayWidth - width) / 2;
+    }
+
+    const box = { left, top, width, height };
+    setVideoBox(box);
+    videoBoxRef.current = box;
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(updateVideoBox);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updateVideoBox]);
 
   // Get existing tracks for this clip
   const existingTracks = clip.motionTracks || [];
@@ -117,27 +168,158 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
     return true;
   };
 
-  const handleTargetClick = (e) => {
-    if (!containerRef.current) return;
-    e.stopPropagation();
-    e.preventDefault();
+  const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-
-    // Normalize to 0-1
-    const normalizedX = Math.max(0, Math.min(1, x));
-    const normalizedY = Math.max(0, Math.min(1, y));
-
-    // Use a small region around the click point (e.g., 5% of video size)
-    setTargetRegion({
-      x: normalizedX,
-      y: normalizedY,
-      width: 0.05,
-      height: 0.05,
-    });
+  const getPointerInfo = (clientX, clientY) => {
+    const container = containerRef.current;
+    const box = videoBoxRef.current;
+    if (!container || !box) return null;
+    const rect = container.getBoundingClientRect();
+    const localX = clientX - rect.left - box.left;
+    const localY = clientY - rect.top - box.top;
+    const inside =
+      localX >= 0 &&
+      localX <= box.width &&
+      localY >= 0 &&
+      localY <= box.height;
+    const normalized = {
+      x: clamp01(localX / box.width),
+      y: clamp01(localY / box.height),
+    };
+    return { inside, normalized };
   };
+
+  const isPointInRegion = (point, region) => {
+    if (!region) return false;
+    const halfW = (region.width || 0) / 2;
+    const halfH = (region.height || 0) / 2;
+    return (
+      point.x >= region.x - halfW &&
+      point.x <= region.x + halfW &&
+      point.y >= region.y - halfH &&
+      point.y <= region.y + halfH
+    );
+  };
+
+  const startDraw = (point) => {
+    const minSize = 0.03;
+    setTargetRegion({ x: point.x, y: point.y, width: minSize, height: minSize });
+    dragRef.current = { type: 'draw', start: point };
+    setIsDraggingTarget(true);
+  };
+
+  const startMove = (point, region) => {
+    dragRef.current = {
+      type: 'move',
+      offsetX: point.x - region.x,
+      offsetY: point.y - region.y,
+      width: region.width || 0.05,
+      height: region.height || 0.05,
+    };
+    setIsDraggingTarget(true);
+  };
+
+  const startResize = (handle, region) => {
+    const halfW = (region.width || 0.05) / 2;
+    const halfH = (region.height || 0.05) / 2;
+    const corners = {
+      nw: { x: region.x - halfW, y: region.y - halfH },
+      ne: { x: region.x + halfW, y: region.y - halfH },
+      sw: { x: region.x - halfW, y: region.y + halfH },
+      se: { x: region.x + halfW, y: region.y + halfH },
+    };
+    const anchorMap = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' };
+    const anchorKey = anchorMap[handle];
+    const anchor = corners[anchorKey];
+    dragRef.current = { type: 'resize', handle, anchor };
+    setIsDraggingTarget(true);
+  };
+
+  const handleTargetMouseDown = (e) => {
+    if (e.button !== 0) return;
+    const info = getPointerInfo(e.clientX, e.clientY);
+    if (!info || !info.inside) return;
+    const region = targetRegionRef.current;
+
+    if (region && isPointInRegion(info.normalized, region)) {
+      startMove(info.normalized, region);
+      return;
+    }
+
+    startDraw(info.normalized);
+  };
+
+  useEffect(() => {
+    if (!isDraggingTarget) return;
+
+    const handleMove = (e) => {
+      const info = getPointerInfo(e.clientX, e.clientY);
+      if (!info) return;
+      const drag = dragRef.current;
+      if (!drag) return;
+
+      if (drag.type === 'draw') {
+        const start = drag.start;
+        const end = info.normalized;
+        const width = Math.abs(end.x - start.x);
+        const height = Math.abs(end.y - start.y);
+        const minSize = 0.02;
+        const centerX = (start.x + end.x) / 2;
+        const centerY = (start.y + end.y) / 2;
+        setTargetRegion({
+          x: clamp01(centerX),
+          y: clamp01(centerY),
+          width: Math.max(minSize, width),
+          height: Math.max(minSize, height),
+        });
+        return;
+      }
+
+      if (drag.type === 'move') {
+        const halfW = (drag.width || 0.05) / 2;
+        const halfH = (drag.height || 0.05) / 2;
+        const centerX = clamp01(info.normalized.x - drag.offsetX);
+        const centerY = clamp01(info.normalized.y - drag.offsetY);
+        const clampedX = Math.max(halfW, Math.min(1 - halfW, centerX));
+        const clampedY = Math.max(halfH, Math.min(1 - halfH, centerY));
+        setTargetRegion({
+          x: clampedX,
+          y: clampedY,
+          width: drag.width,
+          height: drag.height,
+        });
+        return;
+      }
+
+      if (drag.type === 'resize') {
+        const anchor = drag.anchor;
+        const end = info.normalized;
+        const minSize = 0.02;
+        const width = Math.max(minSize, Math.abs(end.x - anchor.x));
+        const height = Math.max(minSize, Math.abs(end.y - anchor.y));
+        const centerX = (end.x + anchor.x) / 2;
+        const centerY = (end.y + anchor.y) / 2;
+        setTargetRegion({
+          x: clamp01(centerX),
+          y: clamp01(centerY),
+          width,
+          height,
+        });
+      }
+    };
+
+    const handleUp = () => {
+      setIsDraggingTarget(false);
+      dragRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isDraggingTarget]);
 
   const handleStartTracking = async () => {
     if (!targetRegion) {
@@ -483,20 +665,21 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
               <div>
                 <h3 className="text-lg font-medium text-slate-200 mb-2">Select Target Object</h3>
                 <p className="text-sm text-slate-400 mb-4">
-                  Click on the object in the video that you want to track. Make sure the playhead is positioned at a frame where the object is clearly visible.
+                  Click and drag to draw a target box around the object. You can move or resize the box using the corners.
                 </p>
               </div>
 
               <div
                 ref={containerRef}
                 className="relative bg-black rounded-lg overflow-hidden aspect-video cursor-crosshair"
-                onClick={handleTargetClick}
+                onMouseDown={handleTargetMouseDown}
               >
                 <video
                   ref={videoRef}
                   src={getVideoUrl(videoId)}
                   className="w-full h-full object-contain"
                   onLoadedMetadata={() => {
+                    updateVideoBox();
                     // Seek to clip start time
                     if (videoRef.current) {
                       const seekTime = clip.trimStart || 0;
@@ -507,21 +690,52 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                 {!targetRegion && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="text-white bg-black/70 px-4 py-2 rounded">
-                      Click on the object to track
+                      Drag to draw a target box
                     </div>
                   </div>
                 )}
-                {targetRegion && (
+                {videoBox && (
                   <div
-                    className="absolute border-2 border-cyan-400 bg-cyan-400/20 pointer-events-none"
+                    className="absolute"
                     style={{
-                      left: `${targetRegion.x * 100}%`,
-                      top: `${targetRegion.y * 100}%`,
-                      width: `${(targetRegion.width || 0.05) * 100}%`,
-                      height: `${(targetRegion.height || 0.05) * 100}%`,
-                      transform: 'translate(-50%, -50%)',
+                      left: videoBox.left,
+                      top: videoBox.top,
+                      width: videoBox.width,
+                      height: videoBox.height,
                     }}
-                  />
+                  >
+                    {targetRegion && (
+                      <div
+                        className="absolute border-2 border-cyan-400 bg-cyan-400/20"
+                        style={{
+                          left: `${targetRegion.x * 100}%`,
+                          top: `${targetRegion.y * 100}%`,
+                          width: `${(targetRegion.width || 0.05) * 100}%`,
+                          height: `${(targetRegion.height || 0.05) * 100}%`,
+                          transform: 'translate(-50%, -50%)',
+                          cursor: 'move',
+                        }}
+                      >
+                        {['nw', 'ne', 'sw', 'se'].map(handle => (
+                          <div
+                            key={handle}
+                            className="absolute w-3 h-3 bg-cyan-300 border border-cyan-900"
+                            style={{
+                              left: handle.includes('w') ? 0 : '100%',
+                              top: handle.includes('n') ? 0 : '100%',
+                              transform: 'translate(-50%, -50%)',
+                              cursor: `${handle}-resize`,
+                            }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              startResize(handle, targetRegion);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -608,9 +822,9 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-slate-400 uppercase">Tracking Quality</span>
                         <span className={`text-xs font-semibold px-2 py-1 rounded ${trackingQuality.quality === 'excellent' ? 'bg-green-900/50 text-green-300' :
-                            trackingQuality.quality === 'good' ? 'bg-blue-900/50 text-blue-300' :
-                              trackingQuality.quality === 'fair' ? 'bg-yellow-900/50 text-yellow-300' :
-                                'bg-red-900/50 text-red-300'
+                          trackingQuality.quality === 'good' ? 'bg-blue-900/50 text-blue-300' :
+                            trackingQuality.quality === 'fair' ? 'bg-yellow-900/50 text-yellow-300' :
+                              'bg-red-900/50 text-red-300'
                           }`}>
                           {trackingQuality.quality.toUpperCase()}
                         </span>
@@ -623,9 +837,9 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                         <div className="w-full bg-slate-700 rounded-full h-2">
                           <div
                             className={`h-2 rounded-full transition-all ${trackingQuality.confidence >= 80 ? 'bg-green-500' :
-                                trackingQuality.confidence >= 60 ? 'bg-blue-500' :
-                                  trackingQuality.confidence >= 40 ? 'bg-yellow-500' :
-                                    'bg-red-500'
+                              trackingQuality.confidence >= 60 ? 'bg-blue-500' :
+                                trackingQuality.confidence >= 40 ? 'bg-yellow-500' :
+                                  'bg-red-500'
                               }`}
                             style={{ width: `${trackingQuality.confidence}%` }}
                           />

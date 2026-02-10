@@ -1247,31 +1247,47 @@ def track_object(req: TrackObjectRequest = Body(...)):
             cap.release()
             raise HTTPException(status_code=500, detail="Failed to read start frame")
 
-        # Initialize tracker - try CSRT first, then KCF fallback
+        # Initialize tracker - try CSRT first, then KCF, then template matching fallback
         tracker = None
+        use_template_matching = False
         try:
             tracker = cv2.TrackerCSRT_create()
+            logger.info("[TRACK-OBJECT] Using CSRT tracker")
         except AttributeError:
             try:
                 tracker = cv2.legacy.TrackerCSRT_create()
+                logger.info("[TRACK-OBJECT] Using legacy CSRT tracker")
             except Exception:
                 pass
 
         if tracker is None:
             try:
                 tracker = cv2.TrackerKCF_create()
+                logger.info("[TRACK-OBJECT] Using KCF tracker")
             except AttributeError:
                 try:
                     tracker = cv2.legacy.TrackerKCF_create()
+                    logger.info("[TRACK-OBJECT] Using legacy KCF tracker")
                 except Exception:
-                    cap.release()
-                    raise HTTPException(
-                        status_code=500,
-                        detail="No OpenCV tracker available. Install opencv-contrib-python."
-                    )
+                    pass
+
+        if tracker is None:
+            # Fallback: template matching (works with base opencv-python)
+            use_template_matching = True
+            logger.info("[TRACK-OBJECT] Using template matching fallback (no contrib trackers available)")
 
         bbox = (roi_x, roi_y, roi_w, roi_h)
-        tracker.init(frame, bbox)
+        if tracker is not None:
+            tracker.init(frame, bbox)
+
+        # For template matching: extract the template from the first frame
+        template = None
+        search_margin = 2.0  # Search in a region 2x the template size
+        if use_template_matching:
+            template = frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w].copy()
+            if template.size == 0:
+                cap.release()
+                raise HTTPException(status_code=400, detail="Target region is empty")
 
         keyframes = []
         # Add the initial keyframe
@@ -1292,6 +1308,8 @@ def track_object(req: TrackObjectRequest = Body(...)):
         current_frame = start_frame + frame_step
         lost_count = 0
         max_lost = 5  # Stop if tracker loses object for too many consecutive frames
+        # Track last known position for template matching search region
+        last_x, last_y = roi_x, roi_y
 
         while current_frame < end_frame:
             cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
@@ -1299,7 +1317,36 @@ def track_object(req: TrackObjectRequest = Body(...)):
             if not ret:
                 break
 
-            success, tracked_bbox = tracker.update(frame)
+            success = False
+            tracked_bbox = None
+
+            if use_template_matching:
+                # Template matching fallback
+                tw, th = template.shape[1], template.shape[0]
+                # Define search region around last known position
+                margin_w = int(tw * search_margin)
+                margin_h = int(th * search_margin)
+                sx1 = max(0, last_x - margin_w)
+                sy1 = max(0, last_y - margin_h)
+                sx2 = min(frame_w, last_x + tw + margin_w)
+                sy2 = min(frame_h, last_y + th + margin_h)
+
+                search_region = frame[sy1:sy2, sx1:sx2]
+                if search_region.shape[0] >= th and search_region.shape[1] >= tw:
+                    result = cv2.matchTemplate(search_region, template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+                    if max_val > 0.4:  # Confidence threshold
+                        match_x = sx1 + max_loc[0]
+                        match_y = sy1 + max_loc[1]
+                        tracked_bbox = (match_x, match_y, tw, th)
+                        success = True
+                        last_x, last_y = match_x, match_y
+                        # Update template periodically to handle appearance changes
+                        if max_val > 0.7:
+                            template = frame[match_y:match_y+th, match_x:match_x+tw].copy()
+            else:
+                success, tracked_bbox = tracker.update(frame)
 
             if success:
                 lost_count = 0

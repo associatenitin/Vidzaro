@@ -13,6 +13,7 @@ export default function VideoPlayer({
   overlayEditTarget,
   onOverlayPositionChange,
 }) {
+  const [playerActiveVideo, setPlayerActiveVideo] = useState(null);
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
   const progressRef = useRef(null);
@@ -21,6 +22,74 @@ export default function VideoPlayer({
   const containerRef = useRef(null);
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
   const dragOverlayRef = useRef(null);
+  const [videoContentRect, setVideoContentRect] = useState(null);
+
+  const updateVideoContentRect = useCallback(() => {
+    const video = playerActiveVideo || videoRef.current;
+    const container = containerRef.current;
+    if (!video || !container) return;
+
+    const videoRect = video.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    const intrinsicWidth = video.videoWidth;
+    const intrinsicHeight = video.videoHeight;
+
+    if (!intrinsicWidth || !intrinsicHeight) {
+      if (videoRect.width === 0 && containerRect.width === 0) {
+        setVideoContentRect(null);
+      }
+      return;
+    }
+
+    const videoRatio = intrinsicWidth / intrinsicHeight;
+    const elementRatio = videoRect.width / videoRect.height;
+
+    let contentWidth, contentHeight, localLeft, localTop;
+
+    if (Math.abs(videoRatio - elementRatio) < 0.01) {
+      contentWidth = videoRect.width;
+      contentHeight = videoRect.height;
+      localLeft = 0;
+      localTop = 0;
+    } else if (videoRatio > elementRatio) {
+      contentWidth = videoRect.width;
+      contentHeight = videoRect.width / videoRatio;
+      localLeft = 0;
+      localTop = (videoRect.height - contentHeight) / 2;
+    } else {
+      contentHeight = videoRect.height;
+      contentWidth = videoRect.height * videoRatio;
+      localTop = 0;
+      localLeft = (videoRect.width - contentWidth) / 2;
+    }
+
+    setVideoContentRect({
+      left: videoRect.left - containerRect.left + localLeft,
+      top: videoRect.top - containerRect.top + localTop,
+      width: contentWidth,
+      height: contentHeight,
+    });
+  }, [playerActiveVideo]);
+
+  useEffect(() => {
+    if (!playerActiveVideo) return;
+
+    const el = playerActiveVideo;
+    const observer = new ResizeObserver(updateVideoContentRect);
+    observer.observe(el);
+    el.addEventListener('loadedmetadata', updateVideoContentRect);
+
+    // Also run it immediately in case metadata is already loaded
+    if (el.readyState >= 1) {
+      updateVideoContentRect();
+    }
+
+    return () => {
+      observer.disconnect();
+      el.removeEventListener('loadedmetadata', updateVideoContentRect);
+    };
+  }, [playerActiveVideo, updateVideoContentRect]);
 
   // Calculate total duration from clips
   const totalDuration = project.clips.reduce((max, clip) => {
@@ -366,23 +435,18 @@ export default function VideoPlayer({
     videoClips.forEach(info => {
       const clip = info.clip;
       const motionTracks = clip.motionTracks || [];
-      const clipStart = clip.startPos || 0;
-      const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
-      const clipEnd = clipStart + clipDuration;
+      const clipLocalTime = info.clipLocalTime;
 
       motionTracks.forEach(track => {
-        // Calculate absolute time range for this track
-        const trackStart = clipStart + (track.startTime || 0);
-        const trackEnd = clipStart + (track.endTime || clipDuration);
+        // Track startTime/endTime are source-relative (untrimmed video time)
+        const trackStart = track.startTime ?? 0;
+        const trackEnd = track.endTime ?? (clip.endTime || clip.duration || Infinity);
 
-        // Check if current time is within track range
-        if (overlayTime >= trackStart && overlayTime <= trackEnd) {
-          // Calculate relative time within the track
-          const relativeTime = overlayTime - trackStart;
-          const trackDuration = trackEnd - trackStart;
-
-          // Interpolate keyframes
-          const position = interpolateKeyframes(track.keyframes, relativeTime);
+        // Check if current source time is within track range
+        if (clipLocalTime >= trackStart && clipLocalTime <= trackEnd) {
+          // Calculate relative time within the track segment (keyframes are 0-based relative to segment start)
+          const segmentRelativeTime = clipLocalTime - trackStart;
+          const position = interpolateKeyframes(track.keyframes, segmentRelativeTime);
 
           tracks.push({
             type: 'motionTrack',
@@ -497,6 +561,7 @@ export default function VideoPlayer({
           currentTime={previewTime}
           onTimeUpdate={onTimeUpdate}
           registerDisplaySource={registerDisplaySource}
+          setVideoElement={setPlayerActiveVideo}
         />
       ) : (
         <>
@@ -568,6 +633,7 @@ export default function VideoPlayer({
                 onTimeUpdate={onTimeUpdate}
                 project={project}
                 registerDisplaySource={registerDisplaySource}
+                setVideoElement={setPlayerActiveVideo}
               />
             </div>
           ) : topVideoClip && !transitionInfo ? (
@@ -579,6 +645,7 @@ export default function VideoPlayer({
                 onTimeUpdate={onTimeUpdate} // Top video ALWAYS drives if it exists
                 project={project}
                 registerDisplaySource={registerDisplaySource}
+                setVideoElement={setPlayerActiveVideo}
               />
             </div>
           ) : (
@@ -594,18 +661,18 @@ export default function VideoPlayer({
                   overlay.size === 'xl'
                     ? 'text-xl'
                     : overlay.size === '2xl'
-                    ? 'text-2xl'
-                    : overlay.size === '6xl'
-                    ? 'text-6xl'
-                    : 'text-4xl';
+                      ? 'text-2xl'
+                      : overlay.size === '6xl'
+                        ? 'text-6xl'
+                        : 'text-4xl';
                 const animClass =
                   overlay.animation === 'fade'
                     ? 'anim-fade'
                     : overlay.animation === 'slide'
-                    ? 'anim-slide'
-                    : overlay.animation === 'scale'
-                    ? 'anim-scale'
-                    : '';
+                      ? 'anim-slide'
+                      : overlay.animation === 'scale'
+                        ? 'anim-scale'
+                        : '';
 
                 const x = overlay.x ?? 50;
                 const y = overlay.y ?? 50;
@@ -628,9 +695,8 @@ export default function VideoPlayer({
                     }}
                   >
                     <span
-                      className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${sizeClass} ${animClass} ${
-                        isThisEditing ? 'cursor-move pointer-events-auto' : 'pointer-events-none'
-                      }`}
+                      className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${sizeClass} ${animClass} ${isThisEditing ? 'cursor-move pointer-events-auto' : 'pointer-events-none'
+                        }`}
                       style={{ color: overlay.color || '#ffffff' }}
                       onMouseDown={(e) => handleOverlayMouseDown(e, descriptor)}
                     >
@@ -643,8 +709,16 @@ export default function VideoPlayer({
           )}
 
           {/* 4. Motion Tracked Overlays */}
-          {allActiveMotionTracks.length > 0 && (
-            <div className="absolute inset-0 z-50 pointer-events-none">
+          {allActiveMotionTracks.length > 0 && videoContentRect && (
+            <div
+              className="absolute pointer-events-none z-50"
+              style={{
+                left: `${videoContentRect.left}px`,
+                top: `${videoContentRect.top}px`,
+                width: `${videoContentRect.width}px`,
+                height: `${videoContentRect.height}px`,
+              }}
+            >
               {allActiveMotionTracks.map(({ clipId, trackId, track, position }) => {
                 const { x, y, scale, rotation } = position;
 
@@ -870,7 +944,7 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
     // Apply playback rate (use 1 for reversed; RAF + seek handle reverse playback)
     audio.playbackRate = clip.reversed ? 1 : (clip.speed || 1);
 
-      // Calculate Fade/Volume
+    // Calculate Fade/Volume
     const track = project.tracks?.find(t => t.id === (clip.track || 0));
     if (track?.hidden || track?.muted) {
       audio.volume = 0;
@@ -940,7 +1014,7 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
   );
 }
 
-function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
+function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource, setVideoElement: setPlayerActiveVideo }) {
   const videoRef = useRef(null);
   const mediaRef = useRef(null); // same element as video or img, for Take Photo
   const { clip, clipLocalTime } = clipInfo;
@@ -996,7 +1070,7 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
 
   return (
     <video
-      ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
+      ref={(el) => { videoRef.current = el; setPlayerActiveVideo?.(el); mediaRef.current = el; }}
       src={videoUrl}
       className="max-w-full max-h-full"
       style={{ filter: getFilterStyle(clip.filter) }}
@@ -1020,7 +1094,7 @@ function VideoLayer({ clipInfo, currentTime, isPlaying, onTimeUpdate, project, r
 }
 
 // Transition Layer for rendering transitions between clips
-function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, currentTime, onTimeUpdate, project, registerDisplaySource }) {
+function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, currentTime, onTimeUpdate, project, registerDisplaySource, setVideoElement: setPlayerActiveVideo }) {
   const { transition, progress } = transitionInfo;
   const { clip: fromClip, clipLocalTime: fromLocalTime } = fromClipInfo;
   const { clip: toClip, clipLocalTime: toLocalTime } = toClipInfo;
@@ -1136,6 +1210,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
         isPlaying={isPlaying}
         onTimeUpdate={null}
         project={project}
+        setVideoElement={setPlayerActiveVideo}
       />
     );
   };
@@ -1161,6 +1236,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
         onTimeUpdate={onTimeUpdate}
         project={project}
         registerDisplaySource={registerDisplaySource}
+        setVideoElement={setPlayerActiveVideo}
       />
     );
   };
@@ -1188,7 +1264,7 @@ function TransitionLayer({ fromClipInfo, toClipInfo, transitionInfo, isPlaying, 
 }
 
 // Helper component for rendering video in transitions
-function TransitionVideoLayer({ clip, clipLocalTime, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource }) {
+function TransitionVideoLayer({ clip, clipLocalTime, currentTime, isPlaying, onTimeUpdate, project, registerDisplaySource, setVideoElement: setPlayerActiveVideo }) {
   const videoRef = useRef(null);
   const mediaRef = useRef(null);
   const isImage = clip.type === 'image' || clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
@@ -1239,7 +1315,7 @@ function TransitionVideoLayer({ clip, clipLocalTime, currentTime, isPlaying, onT
 
   return (
     <video
-      ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
+      ref={(el) => { videoRef.current = el; setPlayerActiveVideo?.(el); mediaRef.current = el; }}
       src={videoUrl}
       className="max-w-full max-h-full"
       style={{ filter: getFilterStyle(clip.filter) }}
@@ -1263,7 +1339,7 @@ function TransitionVideoLayer({ clip, clipLocalTime, currentTime, isPlaying, onT
 }
 
 // Preview Asset Layer for Media Library preview
-function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate, registerDisplaySource }) {
+function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate, registerDisplaySource, setVideoElement: setPlayerActiveVideo }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const mediaRef = useRef(null); // img or video for Take Photo
@@ -1360,7 +1436,7 @@ function PreviewAssetLayer({ asset, isPlaying, currentTime, onTimeUpdate, regist
   return (
     <div className="w-full h-full flex items-center justify-center relative">
       <video
-        ref={(el) => { videoRef.current = el; mediaRef.current = el; }}
+        ref={(el) => { videoRef.current = el; setPlayerActiveVideo?.(el); mediaRef.current = el; }}
         src={videoUrl}
         className="max-w-full max-h-full"
         onTimeUpdate={handleTimeUpdate}
