@@ -241,7 +241,10 @@ export function useProject() {
   const removeAsset = useCallback((assetId) => {
     setProjectWithHistory((prev) => ({
       ...prev,
+      // Remove the asset from the media library
       assets: (prev.assets || []).filter(a => a.id !== assetId),
+      // Also remove any clips on the timeline that reference this asset
+      clips: (prev.clips || []).filter(c => c.assetId !== assetId),
       updatedAt: new Date().toISOString(),
     }));
   }, [setProjectWithHistory]);

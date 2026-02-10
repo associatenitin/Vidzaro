@@ -25,6 +25,9 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
     const [contextMenu, setContextMenu] = useState(null);
     const [showTrackMenu, setShowTrackMenu] = useState(false);
 
+    // Beautiful "Remove from Project" dialog state
+    const [removeDialog, setRemoveDialog] = useState(null); // { asset, isInTimeline }
+
     const handleContextMenu = (e, asset) => {
         e.preventDefault();
         setContextMenu({
@@ -423,11 +426,16 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                     <button
                         className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700 text-slate-200"
                         onClick={() => {
-                            if (window.confirm('Remove this asset from library?')) {
-                                if (onRemoveAsset) {
-                                    onRemoveAsset(contextMenu.asset.id);
-                                }
-                            }
+                            // Prepare a rich, styled confirmation dialog instead of a plain browser confirm
+                            const isInTimeline = project.clips && project.clips.some(
+                                clip => clip.assetId === contextMenu.asset.id
+                            );
+
+                            setRemoveDialog({
+                                asset: contextMenu.asset,
+                                isInTimeline
+                            });
+
                             setContextMenu(null);
                         }}
                     >
@@ -466,6 +474,106 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                         setShowTrackMenu(false);
                     }}
                 ></div>
+            )}
+
+            {/* Beautiful Remove-from-Project dialog */}
+            {removeDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setRemoveDialog(null)}
+                    />
+
+                    {/* Dialog */}
+                    <div className="relative bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        {/* Accent bar */}
+                        <div className="h-1 w-full bg-gradient-to-r from-red-500 via-amber-400 to-blue-500" />
+
+                        <div className="px-6 py-5 space-y-4">
+                            {/* Header */}
+                            <div className="flex items-start gap-3">
+                                <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-red-500/10 text-red-400 border border-red-500/40">
+                                    <svg
+                                        className="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M12 9v4m0 4h.01M4.93 4.93l14.14 14.14M12 3a9 9 0 110 18 9 9 0 010-18z"
+                                        />
+                                    </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-sm font-semibold text-white">
+                                        Remove from project?
+                                    </h3>
+                                    <p className="mt-1 text-xs text-slate-400 line-clamp-2">
+                                        You&apos;re about to remove{' '}
+                                        <span className="font-medium text-slate-100">
+                                            {removeDialog.asset.originalName}
+                                        </span>{' '}
+                                        from this project&apos;s media library.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Details */}
+                            <div className="rounded-xl bg-slate-900/80 border border-slate-700/80 px-4 py-3 space-y-2">
+                                {removeDialog.isInTimeline ? (
+                                    <>
+                                        <p className="text-xs text-slate-200 font-medium">
+                                            This asset is currently used on the timeline.
+                                        </p>
+                                        <p className="text-xs text-slate-400">
+                                            All clips that reference this asset will also be{' '}
+                                            <span className="font-semibold text-red-400">removed</span>.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p className="text-xs text-slate-400">
+                                        This will only remove the asset from the media library for this
+                                        project. Any saved project files will keep their own copies until
+                                        you save again.
+                                    </p>
+                                )}
+
+                                <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-800 mt-2">
+                                    To keep this change after a refresh, make sure to{' '}
+                                    <span className="font-medium text-slate-300">save the project</span>{' '}
+                                    after removing the asset.
+                                </p>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex justify-end gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-600 transition-colors"
+                                    onClick={() => setRemoveDialog(null)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 border border-red-500 shadow-sm shadow-red-900/40 transition-colors"
+                                    onClick={() => {
+                                        if (onRemoveAsset && removeDialog.asset) {
+                                            onRemoveAsset(removeDialog.asset.id);
+                                        }
+                                        setRemoveDialog(null);
+                                    }}
+                                >
+                                    Remove asset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Upload Area at bottom */}
