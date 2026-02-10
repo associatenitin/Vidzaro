@@ -24,6 +24,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Development](#development)
 - [Optional AI services](#optional-ai-services)
+  - [AI models and service mapping](#ai-models-and-service-mapping)
 - [Troubleshooting](#troubleshooting)
 - [Browser support](#browser-support)
 - [License](#license)
@@ -350,6 +351,25 @@ Full list is available in the app under **Help → Keyboard Shortcuts**.
 ## Optional AI services
 
 These services are **optional**. The core editor works without them.
+
+### AI models and service mapping
+
+Start only the services for the features you use. The backend expects them on the ports below (override with env vars; see [Environment variables](#environment-variables)).
+
+| App feature | Service | Default port | Env variable | AI models & specifications |
+|-------------|---------|--------------|--------------|-----------------------------|
+| **Video Morph** (face swap) | morph-service | 8000 | `MORPH_SERVICE_URL` | **InsightFace buffalo_l** — face detection (640×640 standard; 1024×1024 HD). **InSwapper-128** — face swap (128×128 latent). **GFPGAN v1.4** — face restoration (sharpening, detail). Optional: CUDA 12 for GPU. |
+| **Motion tracking** (attach overlay to object) | morph-service | 8000 | `MORPH_SERVICE_URL` | Same service as Video Morph. **OpenCV CSRT/KCF** — object tracking (no extra model). Runs in same process; start morph-service once for both features. |
+| **AI Enhance** (video deblur/clarity) | deblur-service | 8002 | `DEBLUR_SERVICE_URL` | **Real-ESRGAN x4plus** — RRDBNet (x4 upscale), ~60 MB; auto-downloaded on first use. CUDA or CPU. Quality modes: Fast, Balanced, Best. |
+| **Gen AI** (text-to-video) | wan-service | 8003 | `WAN_SERVICE_URL` | **Wan2.1-T2V-1.3B** (Hugging Face: `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`). ~2–3 GB, 832×480, ~5 s clips. Low VRAM mode for ~8 GB GPUs (model CPU offload). |
+
+**How to start services by feature:**
+
+- **Video Morph and/or Motion Tracking** → From repo root: `cd morph-service`, activate venv, run `python download_models.py` once (InsightFace, InSwapper, GFPGAN; ~1 GB), then `python main.py`. Service listens on 8000.
+- **AI Enhance (deblur)** → `cd deblur-service`, activate venv, `python main.py`. Service listens on 8002. Real-ESRGAN model downloads on first enhance request (~60 MB).
+- **Gen AI (text-to-video)** → `cd wan-service`, activate venv, `python main.py`. Service listens on 8003. Wan 2.1 model downloads from Hugging Face on first generation (~2–3 GB).
+
+You can run any combination of these services (e.g. only morph-service, or morph + wan). The app will use whichever are running; features that need a stopped service will show as unavailable.
 
 ### Video Morph setup
 
