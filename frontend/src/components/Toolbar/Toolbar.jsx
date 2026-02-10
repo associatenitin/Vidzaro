@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress, onStartRecording }) {
+export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress, onStartRecording, onMotionTracking }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -111,6 +111,20 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           Gen AI
+        </button>
+      )}
+
+      {/* Motion Tracking Button */}
+      {onMotionTracking && (
+        <button
+          onClick={onMotionTracking}
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-medium flex items-center gap-2"
+          title="Motion Tracking - Attach overlays to tracked objects"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+          </svg>
+          Motion Track
         </button>
       )}
 

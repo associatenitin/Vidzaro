@@ -1,7 +1,7 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import { promisify } from 'util';
-import { fileExists } from '../utils/fileHandler.js';
+import { fileExists, UPLOADS_DIR } from '../utils/fileHandler.js';
 
 // Promisify ffprobe
 const ffprobeAsync = promisify(ffmpeg.ffprobe);
@@ -519,12 +519,177 @@ export async function exportVideo(projectData, outputPath, tempDir) {
         });
       }
 
+      // Motion tracking overlays
+      const motionTracks = Array.isArray(clip.motionTracks) ? clip.motionTracks : [];
+      if (motionTracks.length > 0) {
+        const clipStartPos = clip.startPos || 0;
+        const clipDurTimeline = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+
+        // Helper to generate FFmpeg expression for interpolated position from keyframes
+        const generatePositionExpr = (keyframes, property, defaultValue) => {
+          if (!keyframes || keyframes.length === 0) return String(defaultValue);
+          if (keyframes.length === 1) return String(keyframes[0][property] ?? defaultValue);
+
+          // Sort by time
+          const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+          const first = sorted[0];
+          const last = sorted[sorted.length - 1];
+
+          // Build piecewise linear interpolation expression
+          // Format: if(lt(t, t1), v1, if(lt(t, t2), lerp(v1, v2, (t-t1)/(t2-t1)), ...))
+          let expr = String(first[property] ?? defaultValue);
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const kf1 = sorted[i];
+            const kf2 = sorted[i + 1];
+            const t1 = kf1.time;
+            const t2 = kf2.time;
+            const v1 = kf1[property] ?? defaultValue;
+            const v2 = kf2[property] ?? defaultValue;
+            if (t2 > t1) {
+              const lerp = `(${v1}+(${v2}-${v1})*((t-${t1})/(${t2}-${t1})))`;
+              expr = `if(lt(t\\,${t2})\\,${lerp}\\,${expr})`;
+            }
+          }
+          return expr;
+        };
+
+        motionTracks.forEach((track) => {
+          if (!track.keyframes || track.keyframes.length === 0) return;
+
+          const trackStart = clipStartPos + (track.startTime || 0);
+          const trackEnd = clipStartPos + (track.endTime || clipDurTimeline);
+          const relStart = Math.max(0, trackStart - clipStartPos);
+          const relEnd = Math.min(clipDurTimeline, trackEnd - clipStartPos);
+          if (relEnd <= relStart) return;
+
+          // Adjust keyframe times to be relative to clip start
+          const adjustedKeyframes = track.keyframes.map(kf => ({
+            ...kf,
+            time: kf.time - (track.startTime || 0),
+          })).filter(kf => kf.time >= relStart && kf.time <= relEnd);
+
+          if (adjustedKeyframes.length === 0) return;
+
+          if (track.type === 'text') {
+            // Text overlay with motion tracking
+            const escapedText = (track.content || '').replace(/'/g, "'\\''").replace(/,/g, '\\,');
+            const fontSize = 48; // Default size
+            const color = '#ffffff';
+            const xExpr = `(${generatePositionExpr(adjustedKeyframes, 'x', 0.5)})*W`;
+            const yExpr = `(${generatePositionExpr(adjustedKeyframes, 'y', 0.5)})*H`;
+            const scaleExpr = generatePositionExpr(adjustedKeyframes, 'scale', 1);
+            const rotationExpr = generatePositionExpr(adjustedKeyframes, 'rotation', 0);
+            const enable = `between(t\\,${relStart.toFixed(3)}\\,${relEnd.toFixed(3)})`;
+
+            // Note: FFmpeg drawtext doesn't support scale/rotation directly, so we'll use overlay for that
+            // For now, just position - scale/rotation would require overlay filter which is more complex
+            videoFilters.push(
+              `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${fontSize}:x=${xExpr}:y=${yExpr}:borderw=2:bordercolor=black:enable='${enable}'`
+            );
+          } else if (track.type === 'image' || track.type === 'sticker') {
+            // Image/sticker overlay with motion tracking - will be processed in second pass
+            // Store track info for later processing
+            if (!clip._motionImageOverlays) clip._motionImageOverlays = [];
+            clip._motionImageOverlays.push({
+              track,
+              relStart,
+              relEnd,
+              adjustedKeyframes,
+            });
+          }
+        });
+      }
+
       if (videoFilters.length > 0) command = command.videoFilters(videoFilters);
       if (audioFilters.length > 0) command = command.audioFilters(audioFilters);
 
       await new Promise((resolve, reject) => {
         command.output(processedPath).on('end', resolve).on('error', reject).run();
       });
+
+      // Second pass: Apply image/sticker overlays with motion tracking
+      if (clip._motionImageOverlays && clip._motionImageOverlays.length > 0) {
+        let currentPath = processedPath;
+        for (const overlayInfo of clip._motionImageOverlays) {
+          const { track, relStart, relEnd, adjustedKeyframes } = overlayInfo;
+          
+          // Resolve image path - could be URL or local file
+          let imagePath = track.content;
+          if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+            // For URLs, we'd need to download first - for now, skip
+            console.warn(`[EXPORT] URL-based image overlays not yet supported: ${imagePath}`);
+            continue;
+          }
+          
+          // Check if it's a local file path
+          const possiblePaths = [
+            path.join(UPLOADS_DIR, imagePath),
+            imagePath, // Absolute path
+            path.resolve(imagePath), // Relative path
+          ];
+          
+          let foundImagePath = null;
+          for (const testPath of possiblePaths) {
+            if (await fileExists(testPath)) {
+              foundImagePath = testPath;
+              break;
+            }
+          }
+          
+          if (!foundImagePath) {
+            console.warn(`[EXPORT] Image not found for overlay: ${imagePath}`);
+            continue;
+          }
+
+          // Create temporary output for this overlay pass
+          const overlayOutputPath = path.join(tempDir, `overlay-${clip.id}-${track.id}.mp4`);
+          
+          // Generate expressions for position, scale, rotation
+          const xExpr = generatePositionExpr(adjustedKeyframes, 'x', 0.5);
+          const yExpr = generatePositionExpr(adjustedKeyframes, 'y', 0.5);
+          const scaleExpr = generatePositionExpr(adjustedKeyframes, 'scale', 1);
+          const rotationExpr = generatePositionExpr(adjustedKeyframes, 'rotation', 0);
+          
+          // Build overlay filter with time-varying parameters
+          // Format: overlay=x='expr':y='expr':enable='between(t,start,end)'
+          // For scale and rotation, we need to use scale and rotate filters on the overlay image first
+          const overlayFilter = [
+            // Scale and rotate the overlay image
+            `[1:v]scale=iw*${scaleExpr}:ih*${scaleExpr},rotate=${rotationExpr}*PI/180:fillcolor=0x00000000:ow='iw':oh='ih'[overlay_scaled]`,
+            // Apply overlay with time-varying position
+            `[0:v][overlay_scaled]overlay=x='(${xExpr})*W-iw/2':y='(${yExpr})*H-ih/2':enable='between(t\\,${relStart.toFixed(3)}\\,${relEnd.toFixed(3)})'[vout]`
+          ];
+          
+          await new Promise((resolve, reject) => {
+            ffmpeg()
+              .input(currentPath)
+              .input(foundImagePath)
+              .complexFilter(overlayFilter)
+              .outputOptions(['-map', '[vout]', '-map', '0:a?']) // Map video output and audio from first input
+              .output(overlayOutputPath)
+              .on('end', () => {
+                // Replace current path with overlay output
+                if (currentPath !== processedPath) {
+                  fs.unlink(currentPath).catch(() => {}); // Clean up intermediate file
+                }
+                resolve();
+              })
+              .on('error', (err) => {
+                reject(new Error(`Overlay filter error: ${err.message}`));
+              })
+              .run();
+          });
+          
+          currentPath = overlayOutputPath;
+        }
+        
+        // Update processed path if overlays were applied
+        if (currentPath !== processedPath) {
+          // Clean up original processed file
+          await fs.unlink(processedPath).catch(() => {});
+          processedPath = currentPath;
+        }
+      }
 
       processedClips.push({ ...clip, processedPath });
     }

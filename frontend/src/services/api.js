@@ -249,4 +249,28 @@ export async function adminWanStop() {
   return res.data;
 }
 
+// Motion Tracking: track an object in a video
+export async function motionTrackingTrack(videoId, options = {}) {
+  const {
+    clipStart = 0,
+    clipEnd = null,
+    target = null, // { x, y } or { x, y, width, height } in normalized coordinates (0-1)
+    fps = null,
+  } = options;
+  const res = await api.post('/motion-tracking/track', {
+    videoId,
+    clipStart,
+    clipEnd,
+    target,
+    fps,
+  });
+  return res.data;
+}
+
+// Motion Tracking: get tracking progress
+export async function motionTrackingGetProgress(jobId) {
+  const res = await api.get(`/motion-tracking/progress/${jobId}`);
+  return res.data;
+}
+
 export default api;

@@ -130,7 +130,9 @@ export function useProject() {
       transitionOut: null, // { type: 'crossfade' | 'wipe-left' | 'wipe-right' | 'wipe-up' | 'wipe-down' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'blur', duration: number }
       transitionIn: null, // same structure
       // Per-clip volume automation keyframes (time in seconds relative to clip, value 0–2)
-      volumeAutomation: null
+      volumeAutomation: null,
+      // Motion tracking overlays: array of tracked overlays that follow objects
+      motionTracks: [] // [{ id, type: 'text'|'sticker'|'image', content, startTime, endTime, keyframes: [{ time, x, y, scale?, rotation? }] }]
     };
 
     setProjectWithHistory((prev) => ({
@@ -394,6 +396,8 @@ export function useProject() {
         volumeAutomation: Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : null,
         filter: filter || null, // Keep filter as-is (string or object)
         textOverlays,
+        // Motion tracks: ensure array exists
+        motionTracks: Array.isArray(clip.motionTracks) ? clip.motionTracks : [],
       };
     });
 
@@ -579,6 +583,64 @@ export function useProject() {
     }));
   }, [setProjectWithHistory]);
 
+  // Motion tracking management
+  const addMotionTrackToClip = useCallback((clipId, track) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.motionTracks || [];
+        const newTrack = {
+          id: track.id || uuidv4(),
+          type: track.type || 'text',
+          content: track.content || '',
+          startTime: track.startTime ?? 0,
+          endTime: track.endTime ?? (clip.trimEnd || clip.endTime || clip.duration || 0),
+          keyframes: Array.isArray(track.keyframes) ? track.keyframes : [],
+          scale: track.scale !== undefined ? track.scale : 1,
+          rotation: track.rotation !== undefined ? track.rotation : 0,
+        };
+        return {
+          ...clip,
+          motionTracks: [...existing, newTrack],
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const updateMotionTrack = useCallback((clipId, trackId, updates) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.motionTracks || [];
+        return {
+          ...clip,
+          motionTracks: existing.map((track) =>
+            track.id === trackId ? { ...track, ...updates } : track
+          ),
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const removeMotionTrack = useCallback((clipId, trackId) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.motionTracks || [];
+        return {
+          ...clip,
+          motionTracks: existing.filter((track) => track.id !== trackId),
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
   // Auto-save to LocalStorage
   useEffect(() => {
     const saveProject = () => {
@@ -649,6 +711,10 @@ export function useProject() {
     addGlobalTextOverlay,
     updateGlobalTextOverlay,
     removeGlobalTextOverlay,
+    // Motion Tracking
+    addMotionTrackToClip,
+    updateMotionTrack,
+    removeMotionTrack,
     // History
     undo,
     redo,

@@ -279,6 +279,48 @@ export default function VideoPlayer({
   const displayDuration = showPreview ? (previewAsset?.duration || 0) : totalDuration;
   const progress = displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
 
+  // Helper: interpolate keyframes to get position at a given time
+  const interpolateKeyframes = (keyframes, time) => {
+    if (!keyframes || keyframes.length === 0) return { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
+    if (keyframes.length === 1) {
+      const kf = keyframes[0];
+      return { x: kf.x ?? 0.5, y: kf.y ?? 0.5, scale: kf.scale ?? 1, rotation: kf.rotation ?? 0 };
+    }
+
+    // Sort by time
+    const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+
+    // Before first keyframe
+    if (time <= sorted[0].time) {
+      const kf = sorted[0];
+      return { x: kf.x ?? 0.5, y: kf.y ?? 0.5, scale: kf.scale ?? 1, rotation: kf.rotation ?? 0 };
+    }
+
+    // After last keyframe
+    if (time >= sorted[sorted.length - 1].time) {
+      const kf = sorted[sorted.length - 1];
+      return { x: kf.x ?? 0.5, y: kf.y ?? 0.5, scale: kf.scale ?? 1, rotation: kf.rotation ?? 0 };
+    }
+
+    // Interpolate between two keyframes
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const kf1 = sorted[i];
+      const kf2 = sorted[i + 1];
+      if (time >= kf1.time && time <= kf2.time) {
+        const span = kf2.time - kf1.time;
+        const ratio = span > 0 ? (time - kf1.time) / span : 0;
+        return {
+          x: (kf1.x ?? 0.5) + ((kf2.x ?? 0.5) - (kf1.x ?? 0.5)) * ratio,
+          y: (kf1.y ?? 0.5) + ((kf2.y ?? 0.5) - (kf1.y ?? 0.5)) * ratio,
+          scale: (kf1.scale ?? 1) + ((kf2.scale ?? 1) - (kf1.scale ?? 1)) * ratio,
+          rotation: (kf1.rotation ?? 0) + ((kf2.rotation ?? 0) - (kf1.rotation ?? 0)) * ratio,
+        };
+      }
+    }
+
+    return { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
+  };
+
   // Active text overlays (per-clip + global) - memoized for performance
   const allActiveOverlays = useMemo(() => {
     if (showPreview) return [];
@@ -312,6 +354,49 @@ export default function VideoPlayer({
 
     return [...clipOverlays, ...globalOverlays];
   }, [showPreview, currentTime, totalDuration, videoClips, project.textOverlays]);
+
+  // Active motion tracks - memoized for performance
+  const allActiveMotionTracks = useMemo(() => {
+    if (showPreview) return [];
+
+    const overlayTime = currentTime;
+    const tracks = [];
+
+    // Get motion tracks from active video clips
+    videoClips.forEach(info => {
+      const clip = info.clip;
+      const motionTracks = clip.motionTracks || [];
+      const clipStart = clip.startPos || 0;
+      const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+      const clipEnd = clipStart + clipDuration;
+
+      motionTracks.forEach(track => {
+        // Calculate absolute time range for this track
+        const trackStart = clipStart + (track.startTime || 0);
+        const trackEnd = clipStart + (track.endTime || clipDuration);
+
+        // Check if current time is within track range
+        if (overlayTime >= trackStart && overlayTime <= trackEnd) {
+          // Calculate relative time within the track
+          const relativeTime = overlayTime - trackStart;
+          const trackDuration = trackEnd - trackStart;
+
+          // Interpolate keyframes
+          const position = interpolateKeyframes(track.keyframes, relativeTime);
+
+          tracks.push({
+            type: 'motionTrack',
+            clipId: clip.id,
+            trackId: track.id,
+            track,
+            position,
+          });
+        }
+      });
+    });
+
+    return tracks;
+  }, [showPreview, currentTime, videoClips]);
 
   const isEditingOverlay = !!overlayEditTarget;
 
@@ -553,6 +638,60 @@ export default function VideoPlayer({
                     </span>
                   </div>
                 );
+              })}
+            </div>
+          )}
+
+          {/* 4. Motion Tracked Overlays */}
+          {allActiveMotionTracks.length > 0 && (
+            <div className="absolute inset-0 z-50 pointer-events-none">
+              {allActiveMotionTracks.map(({ clipId, trackId, track, position }) => {
+                const { x, y, scale, rotation } = position;
+
+                if (track.type === 'text') {
+                  const sizeClass = 'text-4xl'; // Default size for tracked text
+                  return (
+                    <div
+                      key={`motion-${clipId}-${trackId}`}
+                      className="absolute"
+                      style={{
+                        left: `${x * 100}%`,
+                        top: `${y * 100}%`,
+                        transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
+                      }}
+                    >
+                      <span
+                        className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${sizeClass} pointer-events-none`}
+                        style={{ color: '#ffffff' }}
+                      >
+                        {track.content || 'Tracked Text'}
+                      </span>
+                    </div>
+                  );
+                } else if (track.type === 'sticker' || track.type === 'image') {
+                  return (
+                    <div
+                      key={`motion-${clipId}-${trackId}`}
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: `${x * 100}%`,
+                        top: `${y * 100}%`,
+                        transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotation}deg)`,
+                      }}
+                    >
+                      <img
+                        src={track.content}
+                        alt="Tracked overlay"
+                        className="max-w-none"
+                        style={{ maxWidth: '200px', maxHeight: '200px' }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  );
+                }
+                return null;
               })}
             </div>
           )}

@@ -18,6 +18,7 @@ import PreferencesDialog from './components/Preferences/PreferencesDialog';
 import AdminPanel from './components/Admin/AdminPanel';
 import EnhanceDialog from './components/Deblur/EnhanceDialog';
 import GenAIDialog from './components/GenAI/GenAIDialog';
+import MotionTrackingDialog from './components/MotionTracking/MotionTrackingDialog';
 import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
@@ -58,6 +59,9 @@ function App() {
     addGlobalTextOverlay,
     updateGlobalTextOverlay,
     removeGlobalTextOverlay,
+    addMotionTrackToClip,
+    updateMotionTrack,
+    removeMotionTrack,
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -73,6 +77,8 @@ function App() {
   const [enhanceDialogAsset, setEnhanceDialogAsset] = useState(null);
   const [showGenAIDialog, setShowGenAIDialog] = useState(false);
   const [genAIProgress, setGenAIProgress] = useState(null);
+  const [showMotionTrackingDialog, setShowMotionTrackingDialog] = useState(false);
+  const [motionTrackingClip, setMotionTrackingClip] = useState(null);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
   const [previewTime, setPreviewTime] = useState(0); // Time for the currently previewed asset
@@ -456,6 +462,165 @@ function App() {
     setShowGenAIDialog(true);
   };
 
+  const handleOpenMotionTracking = (clip = null) => {
+    // If no clip provided, try to get selected clip, clip at current time, or selected asset
+    let targetClip = clip;
+    let targetAsset = null;
+
+    if (!targetClip) {
+      // First, check for selected clip on timeline
+      if (selectedClipIds.length > 0) {
+        targetClip = project.clips.find(c => c.id === selectedClipIds[0]);
+      } 
+      // Then check for clip at current time
+      else {
+        const clipAtTime = project.clips.find(c => {
+          const startPos = c.startPos || 0;
+          const duration = ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1);
+          return currentTime >= startPos && currentTime < startPos + duration;
+        });
+        targetClip = clipAtTime;
+      }
+      
+      // If no clip found, check if there's a selected asset from media library
+      if (!targetClip && selectedAsset) {
+        targetAsset = selectedAsset;
+        // Check if this asset is already on the timeline
+        const existingClip = project.clips.find(c => c.assetId === selectedAsset.id);
+        if (existingClip) {
+          targetClip = existingClip;
+        } else {
+          // Also check project assets in case selectedAsset is not in project.assets
+          const projectAsset = project.assets.find(a => a.id === selectedAsset.id);
+          if (projectAsset) {
+            targetAsset = projectAsset; // Use the project asset which might have more complete data
+          }
+        }
+      }
+    }
+
+    // If we have an asset but no clip, create a temporary clip object for the dialog
+    if (!targetClip && targetAsset) {
+      // Ensure asset has filename - try to get it from project assets if missing
+      if (!targetAsset.filename && targetAsset.id) {
+        const projectAsset = project.assets.find(a => a.id === targetAsset.id);
+        if (projectAsset && projectAsset.filename) {
+          targetAsset = { ...targetAsset, filename: projectAsset.filename };
+        }
+      }
+
+      // Only allow video assets
+      const isImage = targetAsset.type === 'image' || (targetAsset.filename && /\.(jpg|jpeg|png|gif|webp)$/i.test(targetAsset.filename));
+      const isAudio = targetAsset.type === 'audio' || (targetAsset.filename && /\.(mp3|wav|ogg|m4a)$/i.test(targetAsset.filename));
+      if (isImage || isAudio) {
+        alert('Motion tracking is only available for video clips. Please add the video to the timeline first.');
+        return;
+      }
+
+      // Validate asset has filename before creating clip
+      if (!targetAsset.filename) {
+        alert('The selected asset does not have a valid filename. Please ensure the asset was uploaded correctly.');
+        console.error('Asset missing filename:', targetAsset);
+        return;
+      }
+
+      // Create a temporary clip object from the asset
+      targetClip = {
+        id: 'temp-' + targetAsset.id,
+        assetId: targetAsset.id,
+        videoId: targetAsset.filename,
+        filename: targetAsset.filename,
+        videoPath: targetAsset.path,
+        type: targetAsset.type || 'video',
+        duration: targetAsset.duration || 0,
+        trimStart: 0,
+        trimEnd: targetAsset.duration || 0,
+        endTime: targetAsset.duration || 0,
+        speed: 1,
+        startPos: 0,
+        motionTracks: [],
+      };
+    }
+
+    if (!targetClip) {
+      alert('Please select a video clip on the timeline, position the playhead over a video clip, or select a video from the media library to add motion tracking.');
+      return;
+    }
+
+    // Resolve videoId from asset if clip doesn't have it
+    if (!targetClip.videoId && !targetClip.filename) {
+      if (targetClip.assetId) {
+        const asset = project.assets.find(a => a.id === targetClip.assetId);
+        if (asset && asset.filename) {
+          targetClip = { ...targetClip, videoId: asset.filename, filename: asset.filename };
+        }
+      }
+    } else if (!targetClip.videoId && targetClip.filename) {
+      targetClip = { ...targetClip, videoId: targetClip.filename };
+    } else if (targetClip.videoId && !targetClip.filename) {
+      targetClip = { ...targetClip, filename: targetClip.videoId };
+    }
+
+    // Only allow video clips (not images or audio)
+    const isImage = targetClip.type === 'image' || (targetClip.filename && /\.(jpg|jpeg|png|gif|webp)$/i.test(targetClip.filename));
+    const isAudio = targetClip.type === 'audio' || (targetClip.filename && /\.(mp3|wav|ogg|m4a)$/i.test(targetClip.filename));
+    if (isImage || isAudio) {
+      alert('Motion tracking is only available for video clips.');
+      return;
+    }
+
+    // Final check: ensure we have a valid videoId
+    let finalVideoId = targetClip.videoId || targetClip.filename;
+    if (!finalVideoId) {
+      console.error('Clip missing videoId:', targetClip);
+      console.error('Available assets:', project.assets);
+      console.error('Selected asset:', selectedAsset);
+      
+      // Try one more time to resolve from asset
+      if (targetClip.assetId) {
+        const asset = project.assets.find(a => a.id === targetClip.assetId);
+        if (asset) {
+          console.log('Found asset:', asset);
+          if (asset.filename) {
+            targetClip = { ...targetClip, videoId: asset.filename, filename: asset.filename };
+            finalVideoId = asset.filename;
+          } else {
+            alert(`The asset "${asset.originalName || asset.id}" does not have a filename. This may be a corrupted asset.`);
+            return;
+          }
+        } else {
+          // Asset not in project - might be a temporary selection
+          // Try using selectedAsset if it matches
+          if (selectedAsset && selectedAsset.id === targetClip.assetId && selectedAsset.filename) {
+            targetClip = { ...targetClip, videoId: selectedAsset.filename, filename: selectedAsset.filename };
+            finalVideoId = selectedAsset.filename;
+          } else {
+            alert(`Could not find asset with ID "${targetClip.assetId}" in the project. Please add the video to the timeline first.`);
+            return;
+          }
+        }
+      } else {
+        alert('This clip does not have a valid video source. Please ensure the clip is properly linked to a video asset.');
+        return;
+      }
+    }
+
+    // Ensure videoId is set
+    if (!targetClip.videoId) {
+      targetClip = { ...targetClip, videoId: finalVideoId };
+    }
+
+    // Double-check we have a valid videoId before proceeding
+    if (!targetClip.videoId) {
+      console.error('Still missing videoId after resolution:', targetClip);
+      alert('Unable to resolve video source. Please try selecting the clip again or add it to the timeline first.');
+      return;
+    }
+
+    setMotionTrackingClip(targetClip);
+    setShowMotionTrackingDialog(true);
+  };
+
   const handleReverseClips = () => {
     if (selectedClipIds.length === 0) return;
     const selectedClips = project.clips.filter(c => selectedClipIds.includes(c.id));
@@ -625,6 +790,7 @@ function App() {
             onGenAI={handleOpenGenAI}
             genAIProgress={genAIProgress}
             onStartRecording={() => setShowRecorder(true)}
+            onMotionTracking={() => handleOpenMotionTracking(null)}
           />
           <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
             <div className="flex-1 flex items-center justify-center">
@@ -775,6 +941,7 @@ function App() {
           onUpdateCustomFilter={updateCustomFilter}
           onReverseClips={handleReverseClips}
           onEditTextOverlayPosition={handleStartOverlayPositioning}
+          onOpenMotionTracking={handleOpenMotionTracking}
         />
       </div>
 
@@ -859,6 +1026,42 @@ function App() {
             setGenAIProgress(null);
           }}
           onProgress={setGenAIProgress}
+        />
+      )}
+
+      {showMotionTrackingDialog && motionTrackingClip && (
+        <MotionTrackingDialog
+          clip={motionTrackingClip}
+          project={project}
+          currentTime={currentTime}
+          onClose={() => {
+            setShowMotionTrackingDialog(false);
+            setMotionTrackingClip(null);
+          }}
+          onSave={(trackOrUpdate) => {
+            if (trackOrUpdate.action === 'updateAll') {
+              // Update all tracks
+              trackOrUpdate.tracks.forEach(track => {
+                const existing = motionTrackingClip.motionTracks?.find(et => et.id === track.id);
+                if (existing) {
+                  updateMotionTrack(motionTrackingClip.id, track.id, track);
+                } else {
+                  addMotionTrackToClip(motionTrackingClip.id, track);
+                }
+              });
+              // Remove tracks that are no longer in the list
+              const currentTrackIds = trackOrUpdate.tracks.map(t => t.id);
+              motionTrackingClip.motionTracks?.forEach(track => {
+                if (!currentTrackIds.includes(track.id)) {
+                  removeMotionTrack(motionTrackingClip.id, track.id);
+                }
+              });
+            } else {
+              // Add new track
+              addMotionTrackToClip(motionTrackingClip.id, trackOrUpdate);
+            }
+          }}
+          onTimeUpdate={setCurrentTime}
         />
       )}
 

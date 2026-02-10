@@ -13,6 +13,7 @@ import morphRoutes from './routes/morph.js';
 import deblurRoutes from './routes/deblur.js';
 import wanRoutes from './routes/wan.js';
 import adminRoutes from './routes/admin.js';
+import motionTrackingRoutes from './routes/motionTracking.js';
 import { errorHandler } from './utils/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +43,7 @@ app.use('/api/morph', morphRoutes);
 app.use('/api/deblur', deblurRoutes);
 app.use('/api/wan', wanRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/motion-tracking', motionTrackingRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

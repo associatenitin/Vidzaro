@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 import { getFilterDisplayName } from '../../utils/filterUtils';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected, project, onOpenFilterEditor, onEditTextOverlayPosition }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected, project, onOpenFilterEditor, onEditTextOverlayPosition, onOpenMotionTracking }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
@@ -245,7 +245,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     return `${value.toFixed(2)}x`;
   };
 
-  const handleAutomationMouseDown = (e) => {
+  const handleAutomationDoubleClick = (e) => {
     if (!hasAudio || !isSelected) return;
     // Only allow left-click (button 0) - right-click should open context menu
     if (e.button !== 0) return;
@@ -281,6 +281,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
     const HIT_RADIUS = 12; // px
     if (nearestIndex != null && nearestDist <= HIT_RADIUS && raw[nearestIndex]) {
+      // Double-click near existing point: activate it for dragging
       setDraggingAutomationIndex(nearestIndex);
       return;
     }
@@ -303,6 +304,16 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   };
 
   const handleAutomationPointDoubleClick = (e, rawIndex) => {
+    // Double-click on a point activates it for dragging (not delete)
+    // To delete, use right-click context menu or Delete key
+    e.stopPropagation();
+    e.preventDefault();
+    
+    if (!hasAudio || !isSelected) return;
+    setDraggingAutomationIndex(rawIndex);
+  };
+
+  const handleAutomationPointDelete = (e, rawIndex) => {
     e.stopPropagation();
     e.preventDefault();
     const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
@@ -312,12 +323,41 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
     onUpdate({ volumeAutomation: constrained });
   };
 
+  // Handle keyboard deletion of automation points
+  useEffect(() => {
+    if (draggingAutomationIndex == null || !isSelected) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
+        if (raw.length && draggingAutomationIndex >= 0 && draggingAutomationIndex < raw.length) {
+          const next = raw.filter((_, idx) => idx !== draggingAutomationIndex);
+          const constrained = applyAutomationConstraints(next);
+          onUpdate({ volumeAutomation: constrained });
+          setDraggingAutomationIndex(null);
+        }
+      } else if (e.key === 'Escape') {
+        setDraggingAutomationIndex(null);
+        setDragPreviewValue(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [draggingAutomationIndex, isSelected, clip.volumeAutomation, onUpdate]);
+
   useEffect(() => {
     if (draggingAutomationIndex == null) return;
     const svg = automationSvgRef.current;
     if (!svg) return;
 
+    let isDragging = false;
+
     const handleMove = (e) => {
+      if (!isDragging) return;
+      
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
@@ -345,14 +385,26 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
       onUpdate({ volumeAutomation: constrained });
     };
 
+    const handleDown = (e) => {
+      // After double-click activates a point, allow click-and-drag
+      if (e.button === 0) {
+        isDragging = true;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     const handleUp = () => {
+      isDragging = false;
       setDraggingAutomationIndex(null);
       setDragPreviewValue(null);
     };
 
+    window.addEventListener('mousedown', handleDown);
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
     return () => {
+      window.removeEventListener('mousedown', handleDown);
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', handleUp);
     };
@@ -540,7 +592,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                   viewBox="0 0 100 100"
                   preserveAspectRatio="none"
                   className={`absolute inset-1 rounded pointer-events-auto ${isSelected ? 'cursor-crosshair' : 'pointer-events-none'}`}
-                  onMouseDown={isSelected ? handleAutomationMouseDown : undefined}
+                  onDoubleClick={isSelected ? handleAutomationDoubleClick : undefined}
                   onMouseEnter={() => isSelected && setHoveredAutomationArea(true)}
                   onMouseLeave={() => setHoveredAutomationArea(false)}
                 >
@@ -580,9 +632,10 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                             stroke={isDragging ? "rgba(255, 255, 255, 1)" : "rgba(15, 23, 42, 0.9)"}
                             strokeWidth={isDragging ? "0.8" : "0.6"}
                             onDoubleClick={(e) => handleAutomationPointDoubleClick(e, kf.index)}
+                            onContextMenu={(e) => handleAutomationPointDelete(e, kf.index)}
                             onMouseEnter={() => setHoveredAutomationIndex(kf.index)}
                             onMouseLeave={() => setHoveredAutomationIndex(null)}
-                            style={{ cursor: 'grab', transition: isDragging ? 'none' : 'r 0.15s ease' }}
+                            style={{ cursor: isDragging ? 'grabbing' : 'grab', transition: isDragging ? 'none' : 'r 0.15s ease' }}
                           />
                           {/* Volume label near point */}
                           {(isHovered || isDragging) && (
@@ -1244,6 +1297,35 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             </p>
           )}
         </div>
+
+        {/* Motion Tracking */}
+        {!isImage && !isAudio && (
+          <div className="space-y-2 pt-2 mt-2 border-t border-slate-700">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">
+                Motion Tracking
+              </label>
+              {typeof onOpenMotionTracking === 'function' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenMotionTracking(clip);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="text-[11px] px-2 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  Add Track
+                </button>
+              )}
+            </div>
+            {clip.motionTracks && clip.motionTracks.length > 0 && (
+              <div className="text-[10px] text-slate-400">
+                {clip.motionTracks.length} track{clip.motionTracks.length !== 1 ? 's' : ''} active
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Reverse - at bottom */}
         {!isImage && (
