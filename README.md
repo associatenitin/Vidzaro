@@ -44,6 +44,18 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 - **Character selection** — Keyframes with face boxes and labels (Person 1, Person 2, …); click to choose who gets the new face.
 - **CPU / GPU preference** — Toolbar **Preferences** (gear icon): toggle **Video Morph: Use GPU (CUDA)**. When off, the morph service uses CPU only (slower; avoids CUDA DLL errors if the toolkit isn't installed). Stored in the browser and sent with each morph request.
 
+### AI Enhance (Video Deblur)
+
+- **AI-based enhancement** — Optional AI deblur service that can enhance video clarity using Real-ESRGAN.
+- **Quality modes** — Fast, Balanced, and Best presets to trade speed vs quality.
+- **GPU acceleration** — Uses CUDA when available and falls back to CPU when not.
+
+### Gen AI (Text-to-Video)
+
+- **Text-to-video** — Optional Wan 2.1 service to generate short clips from prompts (e.g. *“A cat walks on the grass, realistic”*).
+- **Low VRAM mode** — Supports 8GB consumer GPUs using model offload, with slower but more memory-efficient generation.
+- **Integration** — Generated clips are saved to disk and can be imported back into Vidzaro like any other media.
+
 ### Export & share
 
 - **Export** — Render timeline to video with resolution (1080p, 720p, 480p) and quality (High, Medium, Low); progress indicator and download when done
@@ -75,7 +87,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 
 - **Node.js** 18+ and npm
 - **FFmpeg** installed and on your PATH
-- **Video Morph (optional):** Python 3.10+ and the morph service (see [Video Morph setup](#video-morph-setup)). For GPU acceleration: NVIDIA driver + **CUDA 12** Toolkit with its `bin` folder on PATH (e.g. `cublasLt64_12.dll`). Without CUDA 12, use the toolbar preference to run morph on CPU.
+- **AI services (optional):** Python 3.10+ for the Morph, Deblur, and Wan Gen AI services (see [Video Morph setup](#video-morph-setup), [Video Deblur setup](#video-deblur-setup), and [Gen AI (Wan 2.1) setup](#gen-ai-wan-21-setup)). For Morph GPU acceleration: NVIDIA driver + **CUDA 12** Toolkit with its `bin` folder on PATH (e.g. `cublasLt64_12.dll`). Without CUDA 12, use the toolbar preference to run morph on CPU.
 
 ### Installing FFmpeg
 
@@ -151,19 +163,47 @@ npm install
 
 3. Open **http://localhost:3000** in your browser.
 
-4. **Video Morph (optional):** Start the morph service so face detection and face swap work:
+4. **AI services (optional):** Start whichever Python services you want to use:
 
-   ```bash
-   cd morph-service
-   python -m venv .venv
-   .venv\Scripts\activate    # Windows
-   # source .venv/bin/activate   # macOS/Linux
-   pip install -r requirements.txt
-   python download_models.py     # once: downloads models (~1 GB)
-   uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
+   - **Video Morph (face swap):**
 
-   Keep this running (or set `MORPH_SERVICE_URL` if the service is elsewhere). See [morph-service/README.md](morph-service/README.md) for CUDA/CPU and model options.
+     ```bash
+     cd morph-service
+     python -m venv .venv
+     .venv\Scripts\activate    # Windows
+     # source .venv/bin/activate   # macOS/Linux
+     pip install -r requirements.txt
+     python download_models.py     # once: downloads models (~1 GB)
+     uvicorn main:app --host 0.0.0.0 --port 8000
+     ```
+
+     Keep this running (or set `MORPH_SERVICE_URL` if the service is elsewhere). See [morph-service/README.md](morph-service/README.md) for CUDA/CPU and model options.
+
+   - **Video Deblur (AI Enhance):**
+
+     ```bash
+     cd deblur-service
+     python -m venv .venv
+     .venv\Scripts\activate    # Windows
+     # source .venv/bin/activate   # macOS/Linux
+     pip install -r requirements.txt
+     python main.py            # or: DEBLUR_SERVICE_PORT=8002 python main.py
+     ```
+
+     The backend talks to this service on `DEBLUR_SERVICE_PORT` (default `8002`) for AI-based enhancement.
+
+   - **Gen AI (Wan 2.1 text-to-video):**
+
+     ```bash
+     cd wan-service
+     python -m venv .venv
+     .venv\Scripts\activate    # Windows
+     # source .venv/bin/activate   # macOS/Linux
+     pip install -r requirements.txt
+     python main.py            # or: WAN_SERVICE_PORT=8003 python main.py
+     ```
+
+     This service runs Wan 2.1 T2V via Diffusers and is reachable on `WAN_SERVICE_PORT` (default `8003`).
 
 ### Production
 
@@ -201,6 +241,14 @@ Vidzaro/
 │   ├── main.py           # FastAPI: /detect-faces, /swap
 │   ├── requirements.txt
 │   ├── download_models.py
+│   └── README.md
+├── deblur-service/       # Optional: AI-based video clarity enhancement (Real-ESRGAN)
+│   ├── main.py           # FastAPI: /enhance, /progress/:jobId, /health
+│   ├── requirements.txt
+│   └── README.md
+├── wan-service/          # Optional: Wan 2.1 text-to-video Gen AI
+│   ├── main.py           # FastAPI: /generate, /progress/:jobId, /health
+│   ├── requirements.txt
 │   └── README.md
 ├── frontend/
 │   ├── src/
@@ -321,6 +369,46 @@ Alternatively, in **PowerShell** (adds to your user PATH):
 Replace `v12.4` with your installed version (e.g. `v12.6`). Then close and reopen the terminal.
 
 If the toolkit isn’t installed or PATH isn’t set, turn off **Video Morph: Use GPU (CUDA)** in Preferences to use CPU and avoid DLL errors.
+
+## Video Deblur setup
+
+The optional Video Deblur service provides AI-based video clarity enhancement using Real-ESRGAN. Full details: [deblur-service/README.md](deblur-service/README.md).
+
+**Quick setup:**
+
+1. **Python 3.10+** and **FFmpeg** on PATH.
+2. From repo root:
+
+   ```bash
+   cd deblur-service
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows
+   # source .venv/bin/activate   # macOS/Linux
+   pip install -r requirements.txt
+   python main.py                # or: DEBLUR_SERVICE_PORT=8002 python main.py
+   ```
+
+3. The backend will call this service on `DEBLUR_SERVICE_PORT` (default `8002`) when you trigger AI enhance from the app.
+
+## Gen AI (Wan 2.1) setup
+
+The optional Wan 2.1 Gen AI service provides text-to-video generation using the Wan2.1-T2V-1.3B Diffusers pipeline. Full details: [wan-service/README.md](wan-service/README.md).
+
+**Quick setup:**
+
+1. **Python 3.10+**, **FFmpeg**, and an NVIDIA GPU with ~8GB VRAM (or use Low VRAM mode).
+2. From repo root:
+
+   ```bash
+   cd wan-service
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows
+   # source .venv/bin/activate   # macOS/Linux
+   pip install -r requirements.txt
+   python main.py                # or: WAN_SERVICE_PORT=8003 python main.py
+   ```
+
+3. The backend will call this service on `WAN_SERVICE_PORT` (default `8003`) for text-to-video jobs.
 
 ---
 
