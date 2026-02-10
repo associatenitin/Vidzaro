@@ -297,7 +297,71 @@ export async function exportVideo(projectData, outputPath, tempDir) {
         audioFilters.push(`atempo=${clip.speed}`);
       }
 
-      if (clip.volume !== undefined && clip.volume !== 1) {
+      // Per-clip volume: support either a single scalar or an automation curve over time
+      const hasAutomation = Array.isArray(clip.volumeAutomation) && clip.volumeAutomation.length > 0;
+
+      if (hasAutomation) {
+        const baseVolume = clip.volume !== undefined ? clip.volume : 1;
+        const speed = clip.speed || 1;
+        const timelineDuration = clipDuration / speed;
+
+        const automationPoints = clip.volumeAutomation
+          .map((p) => {
+            const time = typeof p.time === 'number' ? Math.max(0, p.time) : 0;
+            const value = typeof p.value === 'number' ? p.value : 1;
+            return {
+              time,
+              value: Math.max(0, Math.min(2, value)),
+            };
+          })
+          .sort((a, b) => a.time - b.time);
+
+        if (automationPoints.length > 0 && timelineDuration > 0) {
+          const clampedPoints = [];
+          const maxTime = timelineDuration;
+
+          automationPoints.forEach((p) => {
+            const t = Math.max(0, Math.min(maxTime, p.time));
+            const v = Math.max(0, Math.min(2, p.value));
+            if (!clampedPoints.length || Math.abs(clampedPoints[clampedPoints.length - 1].time - t) > 1e-3) {
+              clampedPoints.push({ time: t, value: v });
+            } else {
+              clampedPoints[clampedPoints.length - 1] = { time: t, value: v };
+            }
+          });
+
+          if (clampedPoints.length === 1) {
+            // Single point -> constant volume over the whole clip
+            const v = Math.max(0, Math.min(2, clampedPoints[0].value * baseVolume));
+            audioFilters.push(`volume=${v}`);
+          } else {
+            // Multiple points -> approximate as piecewise-constant segments over time
+            const pointsForSegments = [];
+            const first = clampedPoints[0];
+            const last = clampedPoints[clampedPoints.length - 1];
+
+            if (first.time > 0) {
+              pointsForSegments.push({ time: 0, value: first.value });
+            }
+            clampedPoints.forEach((p) => pointsForSegments.push(p));
+            if (last.time < maxTime) {
+              pointsForSegments.push({ time: maxTime, value: last.value });
+            }
+
+            for (let j = 0; j < pointsForSegments.length - 1; j++) {
+              const a = pointsForSegments[j];
+              const b = pointsForSegments[j + 1];
+              const start = a.time;
+              const end = b.time;
+              if (end <= start) continue;
+              const segmentVolume = Math.max(0, Math.min(2, a.value * baseVolume));
+              const enable = `between(t\\,${start.toFixed(3)}\\,${end.toFixed(3)})`;
+              audioFilters.push(`volume=${segmentVolume}:enable='${enable}'`);
+            }
+          }
+        }
+      } else if (clip.volume !== undefined && clip.volume !== 1) {
+        // Legacy/simple scalar volume without automation
         audioFilters.push(`volume=${clip.volume}`);
       }
 

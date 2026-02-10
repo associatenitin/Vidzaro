@@ -128,7 +128,9 @@ export function useProject() {
       fadeIn: 0,
       fadeOut: 0,
       transitionOut: null, // { type: 'crossfade' | 'wipe-left' | 'wipe-right' | 'wipe-up' | 'wipe-down' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom-in' | 'zoom-out' | 'blur', duration: number }
-      transitionIn: null // same structure
+      transitionIn: null, // same structure
+      // Per-clip volume automation keyframes (time in seconds relative to clip, value 0–2)
+      volumeAutomation: null
     };
 
     setProjectWithHistory((prev) => ({
@@ -388,6 +390,8 @@ export function useProject() {
         fadeOut: clip.fadeOut !== undefined ? clip.fadeOut : 0,
         transitionOut: clip.transitionOut !== undefined ? clip.transitionOut : null,
         transitionIn: clip.transitionIn !== undefined ? clip.transitionIn : null,
+        // Ensure volume automation is always present (or null) for backward compatibility
+        volumeAutomation: Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : null,
         filter: filter || null, // Keep filter as-is (string or object)
         textOverlays,
       };

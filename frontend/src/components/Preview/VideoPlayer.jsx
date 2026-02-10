@@ -666,6 +666,46 @@ export default function VideoPlayer({
 
 // Sub-components for better isolation
 
+// Helper: evaluate per-clip volume automation (0–2) at a given timeline offset (seconds since clip start)
+function getAutomationVolumeAtTime(clip, timelineOffsetSeconds) {
+  const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : null;
+  if (!raw || raw.length === 0) return 1;
+
+  const points = raw
+    .map((p) => {
+      const time = typeof p.time === 'number' ? Math.max(0, p.time) : 0;
+      const value = typeof p.value === 'number' ? p.value : 1;
+      return { time, value };
+    })
+    .sort((a, b) => a.time - b.time);
+
+  if (!points.length) return 1;
+
+  const t = Math.max(0, timelineOffsetSeconds);
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  if (t <= first.time) {
+    return Math.max(0, Math.min(2, first.value));
+  }
+  if (t >= last.time) {
+    return Math.max(0, Math.min(2, last.value));
+  }
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (t >= a.time && t <= b.time) {
+      const span = b.time - a.time || 1;
+      const ratio = (t - a.time) / span;
+      const value = a.value + (b.value - a.value) * ratio;
+      return Math.max(0, Math.min(2, value));
+    }
+  }
+
+  return 1;
+}
+
 function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, transitionInfo }) {
   const audioRef = useRef(null);
   const { clip, clipLocalTime } = clipInfo;
@@ -691,16 +731,28 @@ function AudioLayer({ clipInfo, isPlaying, currentTime, onTimeUpdate, project, t
     // Apply playback rate (use 1 for reversed; RAF + seek handle reverse playback)
     audio.playbackRate = clip.reversed ? 1 : (clip.speed || 1);
 
-    // Calculate Fade/Volume
+      // Calculate Fade/Volume
     const track = project.tracks?.find(t => t.id === (clip.track || 0));
     if (track?.hidden || track?.muted) {
       audio.volume = 0;
     } else {
       let volume = clip.volume === undefined ? 1 : clip.volume;
 
-      // Fades
       const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
       const relativeTime = currentTime - (clip.startPos || 0);
+
+      // Per-clip volume automation over time (acts as a multiplier on base clip.volume)
+      // Volume precedence: base volume (from slider) × automation multiplier (0-2) × fades × transitions
+      // - Automation value 1.0 = 100% of base volume (no change)
+      // - Automation value 2.0 = 200% of base volume (double)
+      // - Automation value 0.5 = 50% of base volume (half)
+      const automationFactor = getAutomationVolumeAtTime(
+        clip,
+        Math.max(0, Math.min(clipDuration || 0, relativeTime))
+      );
+      volume *= automationFactor;
+
+      // Fades
 
       if (clip.fadeIn && relativeTime < clip.fadeIn) {
         volume *= (relativeTime / clip.fadeIn);

@@ -16,25 +16,34 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   const [showSettings, setShowSettings] = useState(false);
   const [panelPosition, setPanelPosition] = useState({ top: 0, left: 0, position: 'fixed' });
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [draggingAutomationIndex, setDraggingAutomationIndex] = useState(null);
+  const [hoveredAutomationIndex, setHoveredAutomationIndex] = useState(null);
+  const [dragPreviewValue, setDragPreviewValue] = useState(null);
+  const automationSvgRef = useRef(null);
 
   const isImage = clip.type === 'image' || (clip.filename && clip.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i));
   const isAudio = clip.type === 'audio' || (clip.filename && clip.filename.match(/\.(mp3|wav|ogg|m4a)$/i));
 
   useEffect(() => {
-    if (isImage || isAudio) return;
+    // Images have no audio or thumbnails; nothing to fetch
+    if (isImage) return;
 
     const fetchResources = async () => {
       try {
-        const response = await getVideoThumbnails(clip.videoId);
-        setThumbnails(response.data);
+        // Only videos need thumbnails; audio clips just need waveform
+        if (!isAudio) {
+          const response = await getVideoThumbnails(clip.videoId);
+          setThumbnails(response.data);
+        }
       } catch (error) {
         console.error('Failed to fetch thumbnails:', error);
       }
 
+      // Waveform is available for both video and audio sources
       setWaveformUrl(getWaveformUrl(clip.videoId));
     };
     fetchResources();
-  }, [clip.videoId, isImage]);
+  }, [clip.videoId, isImage, isAudio]);
 
   const visibleThumbnails = useMemo(() => {
     if (thumbnails.length === 0) return [];
@@ -120,6 +129,230 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
   };
 
   const clipDuration = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+
+  const hasAudio = clip.audioEnabled !== false && !isImage;
+
+  // Normalized automation keyframes: sorted by time with clamped values, plus original index into clip.volumeAutomation
+  const automationKeyframes = useMemo(() => {
+    const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
+    if (!clipDuration || clipDuration <= 0 || raw.length === 0) return [];
+
+    const normalized = raw.map((kf, index) => {
+      const rawTime = typeof kf.time === 'number' ? kf.time : 0;
+      const time = Math.max(0, Math.min(clipDuration, rawTime));
+      const rawValue = typeof kf.value === 'number' ? kf.value : 1;
+      const value = Math.max(0, Math.min(2, rawValue));
+      return { index, time, value };
+    });
+
+    return normalized.sort((a, b) => a.time - b.time);
+  }, [clip.volumeAutomation, clipDuration]);
+
+  const valueToYPercent = (value) => {
+    const clamped = Math.max(0, Math.min(2, value == null ? 1 : value));
+    // 0 => bottom (100%), 2 => top (0%)
+    const normalized = 1 - clamped / 2;
+    return normalized * 100;
+  };
+
+  const yPercentToValue = (yPercent) => {
+    const clamped = Math.max(0, Math.min(100, yPercent));
+    const value = 2 * (1 - clamped / 100);
+    return Math.max(0, Math.min(2, value));
+  };
+
+  const timeToXPercent = (time) => {
+    if (!clipDuration || clipDuration <= 0) return 0;
+    const clamped = Math.max(0, Math.min(clipDuration, time));
+    return (clamped / clipDuration) * 100;
+  };
+
+  const xPercentToTime = (xPercent) => {
+    const clamped = Math.max(0, Math.min(100, xPercent));
+    if (!clipDuration || clipDuration <= 0) return 0;
+    return (clamped / 100) * clipDuration;
+  };
+
+  const applyAutomationConstraints = (points) => {
+    if (!points || points.length === 0) return null;
+    const sorted = [...points].sort((a, b) => a.time - b.time);
+    const MIN_SPACING = 0.05; // seconds
+    const constrained = [];
+    for (const p of sorted) {
+      const time = Math.max(0, Math.min(clipDuration, p.time));
+      const value = Math.max(0, Math.min(2, p.value == null ? 1 : p.value));
+      if (!constrained.length) {
+        constrained.push({ time, value });
+      } else {
+        const prev = constrained[constrained.length - 1];
+        if (time - prev.time < MIN_SPACING) {
+          // Replace previous with the newer point if too close
+          constrained[constrained.length - 1] = { time, value };
+        } else {
+          constrained.push({ time, value });
+        }
+      }
+    }
+    return constrained;
+  };
+
+  // Render points for automation polyline (ensure full coverage across clip)
+  const automationRenderPoints = useMemo(() => {
+    if (!clipDuration || clipDuration <= 0) return [];
+
+    const baseVolume = clip.volume || 1;
+
+    if (!automationKeyframes.length) {
+      return [
+        { time: 0, value: baseVolume },
+        { time: clipDuration, value: baseVolume },
+      ];
+    }
+
+    const points = [];
+    const first = automationKeyframes[0];
+    if (first.time > 0) {
+      points.push({ time: 0, value: first.value });
+    }
+    automationKeyframes.forEach((p) => {
+      points.push({ time: p.time, value: p.value });
+    });
+    const last = automationKeyframes[automationKeyframes.length - 1];
+    if (last.time < clipDuration) {
+      points.push({ time: clipDuration, value: last.value });
+    }
+    return points;
+  }, [automationKeyframes, clipDuration, clip.volume]);
+
+  const automationPolylinePoints = useMemo(() => {
+    if (!automationRenderPoints.length) return '';
+    return automationRenderPoints
+      .map((p) => `${timeToXPercent(p.time)},${valueToYPercent(p.value)}`)
+      .join(' ');
+  }, [automationRenderPoints]);
+
+  // Calculate effective volume percentage for display (base volume * automation multiplier)
+  const getEffectiveVolumePercent = (automationValue) => {
+    const baseVolume = clip.volume !== undefined ? clip.volume : 1;
+    const effective = baseVolume * automationValue;
+    return Math.round(Math.max(0, Math.min(200, effective * 100)));
+  };
+
+  // Format automation value as multiplier display (e.g., "1.5x" or "0.5x")
+  const formatAutomationMultiplier = (value) => {
+    if (value === 1) return '1.0x';
+    return `${value.toFixed(2)}x`;
+  };
+
+  const handleAutomationMouseDown = (e) => {
+    if (!hasAudio || !isSelected) return;
+    const svg = automationSvgRef.current;
+    if (!svg) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const clickX = e.clientX;
+    const clickY = e.clientY;
+
+    // Check if clicking near an existing keyframe to start dragging
+    let nearestIndex = null;
+    let nearestDist = Infinity;
+    const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
+
+    automationKeyframes.forEach((kf, i) => {
+      const x = rect.left + (timeToXPercent(kf.time) / 100) * rect.width;
+      const y = rect.top + (valueToYPercent(kf.value) / 100) * rect.height;
+      const dx = x - clickX;
+      const dy = y - clickY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestIndex = kf.index; // index into raw array
+      }
+    });
+
+    const HIT_RADIUS = 12; // px
+    if (nearestIndex != null && nearestDist <= HIT_RADIUS && raw[nearestIndex]) {
+      setDraggingAutomationIndex(nearestIndex);
+      return;
+    }
+
+    // Otherwise, create a new keyframe at this position
+    const xRatio = (clickX - rect.left) / rect.width;
+    const yRatio = (clickY - rect.top) / rect.height;
+    const xPercent = Math.max(0, Math.min(100, xRatio * 100));
+    const yPercent = Math.max(0, Math.min(100, yRatio * 100));
+
+    const SNAP_TIME = 0.05; // seconds
+    let time = xPercentToTime(xPercent);
+    time = Math.round(time / SNAP_TIME) * SNAP_TIME;
+    time = Math.max(0, Math.min(clipDuration, time));
+    const value = yPercentToValue(yPercent);
+
+    const next = [...raw, { time, value }];
+    const constrained = applyAutomationConstraints(next);
+    onUpdate({ volumeAutomation: constrained });
+  };
+
+  const handleAutomationPointDoubleClick = (e, rawIndex) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
+    if (!raw.length) return;
+    const next = raw.filter((_, idx) => idx !== rawIndex);
+    const constrained = applyAutomationConstraints(next);
+    onUpdate({ volumeAutomation: constrained });
+  };
+
+  useEffect(() => {
+    if (draggingAutomationIndex == null) return;
+    const svg = automationSvgRef.current;
+    if (!svg) return;
+
+    const handleMove = (e) => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const xRatio = (e.clientX - rect.left) / rect.width;
+      const yRatio = (e.clientY - rect.top) / rect.height;
+      const xPercent = Math.max(0, Math.min(100, xRatio * 100));
+      const yPercent = Math.max(0, Math.min(100, yRatio * 100));
+
+      const SNAP_TIME = 0.05; // seconds
+      let time = xPercentToTime(xPercent);
+      time = Math.round(time / SNAP_TIME) * SNAP_TIME;
+      time = Math.max(0, Math.min(clipDuration, time));
+      const value = yPercentToValue(yPercent);
+
+      // Update preview value for visual feedback
+      setDragPreviewValue({ time, value });
+
+      const raw = Array.isArray(clip.volumeAutomation) ? clip.volumeAutomation : [];
+      if (!raw.length || draggingAutomationIndex < 0 || draggingAutomationIndex >= raw.length) return;
+
+      const updated = raw.map((kf, idx) =>
+        idx === draggingAutomationIndex ? { time, value } : kf
+      );
+      const constrained = applyAutomationConstraints(updated);
+      onUpdate({ volumeAutomation: constrained });
+    };
+
+    const handleUp = () => {
+      setDraggingAutomationIndex(null);
+      setDragPreviewValue(null);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [draggingAutomationIndex, clip.volumeAutomation, clipDuration, onUpdate]);
 
   const handleContextMenu = (e) => {
     // If this clip is part of a multi-selection, allow event to bubble to Timeline
@@ -281,15 +514,137 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           )}
         </div>
 
-        {/* Waveform Overlay */}
-        {waveformUrl && (
-          <div className="absolute inset-0 pointer-events-none opacity-80 mix-blend-screen">
-            <img
-              src={waveformUrl}
-              alt="waveform"
-              className="w-full h-full object-fill opacity-80"
-              draggable="false"
-            />
+        {/* Waveform & Volume Automation Overlay */}
+        {(hasAudio || waveformUrl) && (
+          <div className="absolute inset-0">
+            {waveformUrl && (
+              <div className="absolute inset-0 pointer-events-none opacity-80 mix-blend-screen">
+                <img
+                  src={waveformUrl}
+                  alt="waveform"
+                  className="w-full h-full object-fill opacity-80"
+                  draggable="false"
+                />
+              </div>
+            )}
+
+            {/* Volume automation line and points - editable only when this clip is selected */}
+            {hasAudio && (
+              <>
+                <svg
+                  ref={automationSvgRef}
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className={`absolute inset-1 rounded pointer-events-auto ${isSelected ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                  onMouseDown={isSelected ? handleAutomationMouseDown : undefined}
+                >
+                  {/* Center line at 100% volume (base volume from slider) */}
+                  <line
+                    x1="0"
+                    x2="100"
+                    y1={valueToYPercent(1)}
+                    y2={valueToYPercent(1)}
+                    stroke="rgba(148, 163, 184, 0.7)"
+                    strokeWidth="0.5"
+                    strokeDasharray="2 2"
+                  />
+
+                  {/* Automation curve */}
+                  {automationPolylinePoints && (
+                    <polyline
+                      points={automationPolylinePoints}
+                      fill="none"
+                      stroke="rgba(34, 211, 238, 0.9)"
+                      strokeWidth="1.2"
+                    />
+                  )}
+
+                  {/* Draggable keyframe points */}
+                  {isSelected &&
+                    automationKeyframes.map((kf) => {
+                      const isDragging = draggingAutomationIndex === kf.index;
+                      const isHovered = hoveredAutomationIndex === kf.index;
+                      return (
+                        <g key={kf.index}>
+                          <circle
+                            cx={timeToXPercent(kf.time)}
+                            cy={valueToYPercent(kf.value)}
+                            r={isDragging ? "2.5" : isHovered ? "2.2" : "1.8"}
+                            fill={isDragging ? "rgba(34, 211, 238, 1)" : "rgba(34, 211, 238, 0.9)"}
+                            stroke={isDragging ? "rgba(255, 255, 255, 1)" : "rgba(15, 23, 42, 0.9)"}
+                            strokeWidth={isDragging ? "0.8" : "0.6"}
+                            onDoubleClick={(e) => handleAutomationPointDoubleClick(e, kf.index)}
+                            onMouseEnter={() => setHoveredAutomationIndex(kf.index)}
+                            onMouseLeave={() => setHoveredAutomationIndex(null)}
+                            style={{ cursor: 'grab', transition: isDragging ? 'none' : 'r 0.15s ease' }}
+                          />
+                          {/* Volume label near point */}
+                          {(isHovered || isDragging) && (
+                            <text
+                              x={timeToXPercent(kf.time)}
+                              y={valueToYPercent(kf.value) - 3}
+                              textAnchor="middle"
+                              fontSize="2.5"
+                              fill="rgba(255, 255, 255, 0.95)"
+                              stroke="rgba(15, 23, 42, 0.8)"
+                              strokeWidth="0.3"
+                              paintOrder="stroke"
+                              pointerEvents="none"
+                              className="font-mono font-semibold"
+                            >
+                              {getEffectiveVolumePercent(kf.value)}%
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                  {/* Drag preview label */}
+                  {dragPreviewValue && draggingAutomationIndex !== null && (
+                    <g>
+                      <text
+                        x={timeToXPercent(dragPreviewValue.time)}
+                        y={valueToYPercent(dragPreviewValue.value) - 3}
+                        textAnchor="middle"
+                        fontSize="2.8"
+                        fill="rgba(34, 211, 238, 1)"
+                        stroke="rgba(15, 23, 42, 0.95)"
+                        strokeWidth="0.4"
+                        paintOrder="stroke"
+                        pointerEvents="none"
+                        className="font-mono font-bold"
+                      >
+                        {getEffectiveVolumePercent(dragPreviewValue.value)}%
+                      </text>
+                      <text
+                        x={timeToXPercent(dragPreviewValue.time)}
+                        y={valueToYPercent(dragPreviewValue.value) - 5.5}
+                        textAnchor="middle"
+                        fontSize="2"
+                        fill="rgba(200, 200, 200, 0.9)"
+                        stroke="rgba(15, 23, 42, 0.8)"
+                        strokeWidth="0.3"
+                        paintOrder="stroke"
+                        pointerEvents="none"
+                        className="font-mono"
+                      >
+                        {formatAutomationMultiplier(dragPreviewValue.value)}
+                      </text>
+                    </g>
+                  )}
+                </svg>
+
+                {/* Legend/tooltip explaining volume relationship */}
+                {isSelected && automationKeyframes.length > 0 && (
+                  <div className="absolute bottom-1 left-1 bg-slate-900/90 text-slate-200 text-[9px] px-1.5 py-0.5 rounded border border-slate-600/50 pointer-events-none z-10">
+                    <div className="font-semibold">Volume Automation</div>
+                    <div className="text-slate-400">
+                      Base: {Math.round((clip.volume || 1) * 100)}% • Drag points to adjust
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -503,6 +858,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             onDragStart={(e) => e.preventDefault()}
             className="w-full h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-cyan-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-500 [&::-webkit-slider-thumb]:cursor-pointer"
           />
+          {Array.isArray(clip.volumeAutomation) && clip.volumeAutomation.length > 0 && (
+            <div className="text-[10px] text-slate-400 mt-1">
+              Automation active: drag points on waveform to adjust volume over time
+            </div>
+          )}
         </div>
 
         {/* Fades */}
