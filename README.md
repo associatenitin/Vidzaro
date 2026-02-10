@@ -14,6 +14,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 
 - [Features](#features)
 - [Tech stack](#tech-stack)
+- [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Running the application](#running-the-application)
@@ -113,6 +114,41 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 | **State** | React hooks (no global store) |
 | **Drag and drop** | @dnd-kit (timeline reorder, library → timeline) |
 | **Storage** | Local filesystem (uploads, exports, projects, thumbnails) |
+
+---
+
+## Architecture
+
+High-level layout: the browser talks only to the backend; the backend orchestrates FFmpeg and optional AI services and reads/writes the filesystem.
+
+```mermaid
+flowchart LR
+  subgraph Client["Browser"]
+    FE[Frontend\nReact + Vite\n:3000]
+  end
+
+  subgraph Server["Vidzaro server"]
+    BE[Backend\nNode.js + Express\n:3001]
+    FF[FFmpeg]
+    FS[(Storage\nuploads, exports\nprojects, thumbnails)]
+  end
+
+  subgraph Optional["Optional AI services"]
+    MORPH[morph-service\nFace swap & motion tracking\n:8000]
+    DEBLUR[deblur-service\nAI Enhance / Real-ESRGAN\n:8002]
+    WAN[wan-service\nGen AI text-to-video\n:8003]
+  end
+
+  FE -->|"/api"| BE
+  BE --> FF
+  BE --> FS
+  BE -.->|MORPH_SERVICE_URL| MORPH
+  BE -.->|DEBLUR_SERVICE_URL| DEBLUR
+  BE -.->|WAN_SERVICE_URL| WAN
+```
+
+- **Solid lines** — Required: frontend calls backend; backend uses FFmpeg and local storage.
+- **Dashed lines** — Optional: backend proxies to AI services only when they are running and the user uses Video Morph, Motion Tracking, AI Enhance, or Gen AI.
 
 ---
 
