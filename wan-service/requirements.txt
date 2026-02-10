@@ -1,17 +1,18 @@
-# Wan 2.1 T2V Service - Vidzaro Gen AI
+# Vidzaro Wan Service - Text-to-video generation (Wan 2.1 T2V)
 # Python 3.10+
+# Requires an NVIDIA GPU with ~8GB VRAM for best results; use low VRAM mode for smaller GPUs.
 
-# Diffusers with Wan 2.1 T2V pipeline
+# --- Diffusers and Wan 2.1 T2V pipeline ---
 diffusers>=0.30.0
 transformers>=4.45.0
 accelerate>=0.33.0
 ftfy>=6.1.0
 
-# PyTorch (CUDA if available)
+# --- PyTorch (install with CUDA from https://pytorch.org for GPU) ---
 torch>=2.4.0
 torchvision>=0.19.0
 
-# API
+# --- API ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.10
