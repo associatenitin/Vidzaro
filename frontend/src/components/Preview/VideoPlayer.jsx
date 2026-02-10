@@ -2,12 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVideoUrl } from '../../services/api';
 import { convertFilterToCSS } from '../../utils/filterUtils';
 
-export default function VideoPlayer({ project, currentTime, previewTime, isPlaying, onTimeUpdate, onPlayPause, previewAsset }) {
+export default function VideoPlayer({
+  project,
+  currentTime,
+  previewTime,
+  isPlaying,
+  onTimeUpdate,
+  onPlayPause,
+  previewAsset,
+  overlayEditTarget,
+  onOverlayPositionChange,
+}) {
   const videoRef = useRef(null);
   const isSeekingRef = useRef(false);
   const progressRef = useRef(null);
   const displaySourceRef = useRef(null); // video or img element from the active layer (for Take Photo)
   const [hasDisplaySource, setHasDisplaySource] = useState(false);
+  const containerRef = useRef(null);
+  const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
+  const dragOverlayRef = useRef(null);
 
   // Calculate total duration from clips
   const totalDuration = project.clips.reduce((max, clip) => {
@@ -266,6 +279,84 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
   const displayDuration = showPreview ? (previewAsset?.duration || 0) : totalDuration;
   const progress = displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
 
+  // Active text overlays (per-clip + global)
+  const overlayTime = showPreview ? null : currentTime;
+
+  const activeClipOverlays = !showPreview
+    ? videoClips.flatMap(info => {
+        const overlays = info.clip.textOverlays || [];
+        return overlays.map(overlay => ({
+          type: 'clip',
+          clipId: info.clip.id,
+          overlayId: overlay.id,
+          overlay,
+        }));
+      })
+    : [];
+
+  const activeGlobalOverlays = !showPreview
+    ? (project.textOverlays || [])
+        .filter((overlay) => {
+          const start = overlay.startTime ?? 0;
+          const end = overlay.endTime ?? totalDuration;
+          return overlayTime >= start && overlayTime <= end;
+        })
+        .map((overlay) => ({
+          type: 'global',
+          overlayId: overlay.id,
+          overlay,
+        }))
+    : [];
+
+  const allActiveOverlays = [...activeClipOverlays, ...activeGlobalOverlays];
+
+  const isEditingOverlay = !!overlayEditTarget;
+
+  const handleOverlayMouseDown = (e, descriptor) => {
+    if (!isEditingOverlay || !overlayEditTarget) return;
+    const sameTarget =
+      overlayEditTarget.type === descriptor.type &&
+      overlayEditTarget.overlayId === descriptor.overlayId &&
+      (!descriptor.clipId || overlayEditTarget.clipId === descriptor.clipId);
+    if (!sameTarget) return;
+    if (!onOverlayPositionChange) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragOverlayRef.current = descriptor;
+    setIsDraggingOverlay(true);
+  };
+
+  useEffect(() => {
+    if (!isDraggingOverlay) return;
+
+    const handleMove = (e) => {
+      const container = containerRef.current;
+      const descriptor = dragOverlayRef.current;
+      if (!container || !descriptor || !onOverlayPositionChange) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      const clamped = {
+        x: Math.max(0, Math.min(100, x)),
+        y: Math.max(0, Math.min(100, y)),
+      };
+      onOverlayPositionChange(descriptor, clamped);
+    };
+
+    const handleUp = () => {
+      setIsDraggingOverlay(false);
+      dragOverlayRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isDraggingOverlay, onOverlayPositionChange]);
+
   const registerDisplaySource = useCallback((el) => {
     displaySourceRef.current = el;
     setHasDisplaySource(!!el);
@@ -306,7 +397,10 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
   }, []);
 
   return (
-    <div className="w-full max-w-4xl relative group bg-black rounded-lg shadow-2xl overflow-hidden aspect-video">
+    <div
+      ref={containerRef}
+      className="w-full max-w-4xl relative group bg-black rounded-lg shadow-2xl overflow-hidden aspect-video"
+    >
       {showPreview ? (
         // Preview Mode: Show selected asset from Media Library
         <PreviewAssetLayer
@@ -403,27 +497,60 @@ export default function VideoPlayer({ project, currentTime, previewTime, isPlayi
             <div className="w-full h-full flex items-center justify-center text-slate-500 font-medium">No active video</div>
           )}
 
-          {/* 3. Global Overlays */}
-          {topVideoClip?.clip.text && (
-            <div className={`absolute inset-0 flex pointer-events-none z-50 p-10 ${topVideoClip.clip.textPos === 'top' ? 'items-start justify-center' :
-              topVideoClip.clip.textPos === 'bottom' ? 'items-end justify-center' :
-                'items-center justify-center'
-              }`}>
-              <span
-                key={`${topVideoClip.clip.id}-${topVideoClip.clip.text}-${topVideoClip.clip.textAnim}`}
-                className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${topVideoClip.clip.textSize === 'xl' ? 'text-xl' :
-                  topVideoClip.clip.textSize === '2xl' ? 'text-2xl' :
-                    topVideoClip.clip.textSize === '6xl' ? 'text-6xl' :
-                      'text-4xl'
-                  } ${topVideoClip.clip.textAnim === 'fade' ? 'anim-fade' :
-                    topVideoClip.clip.textAnim === 'slide' ? 'anim-slide' :
-                      topVideoClip.clip.textAnim === 'scale' ? 'anim-scale' :
-                        ''
-                  }`}
-                style={{ color: topVideoClip.clip.textColor || '#ffffff' }}
-              >
-                {topVideoClip.clip.text}
-              </span>
+          {/* 3. Text Overlays (per-clip + global) */}
+          {allActiveOverlays.length > 0 && (
+            <div className="absolute inset-0 z-50 pointer-events-none">
+              {allActiveOverlays.map(({ type, clipId, overlayId, overlay }) => {
+                if (!overlay || !overlay.text) return null;
+                const sizeClass =
+                  overlay.size === 'xl'
+                    ? 'text-xl'
+                    : overlay.size === '2xl'
+                    ? 'text-2xl'
+                    : overlay.size === '6xl'
+                    ? 'text-6xl'
+                    : 'text-4xl';
+                const animClass =
+                  overlay.animation === 'fade'
+                    ? 'anim-fade'
+                    : overlay.animation === 'slide'
+                    ? 'anim-slide'
+                    : overlay.animation === 'scale'
+                    ? 'anim-scale'
+                    : '';
+
+                const x = overlay.x ?? 50;
+                const y = overlay.y ?? 50;
+
+                const descriptor = { type, clipId, overlayId };
+                const isThisEditing =
+                  overlayEditTarget &&
+                  overlayEditTarget.type === type &&
+                  overlayEditTarget.overlayId === overlayId &&
+                  (!clipId || overlayEditTarget.clipId === clipId);
+
+                return (
+                  <div
+                    key={`${type}-${clipId || 'global'}-${overlayId}`}
+                    className="absolute"
+                    style={{
+                      left: `${x}%`,
+                      top: `${y}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    <span
+                      className={`font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center px-6 leading-tight ${sizeClass} ${animClass} ${
+                        isThisEditing ? 'cursor-move pointer-events-auto' : 'pointer-events-none'
+                      }`}
+                      style={{ color: overlay.color || '#ffffff' }}
+                      onMouseDown={(e) => handleOverlayMouseDown(e, descriptor)}
+                    >
+                      {overlay.text}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </>

@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { getVideoThumbnails, getThumbnailUrl, getWaveformUrl, getVideoUrl } from '../../services/api';
 import { getFilterDisplayName } from '../../utils/filterUtils';
 
-export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected, project, onOpenFilterEditor }) {
+export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onRemove, onDetachAudio, isDragging, isSelected, onSelect, isMultiSelected, project, onOpenFilterEditor, onEditTextOverlayPosition }) {
   const [isResizing, setIsResizing] = useState(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartTrim, setResizeStartTrim] = useState(0);
@@ -685,76 +685,197 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </div>
         </div>
 
-        {/* Text Overlay */}
+        {/* Text Overlays */}
         <div className="space-y-2">
-          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Text Overlay</label>
-          <input
-            type="text"
-            placeholder="Add text..."
-            value={clip.text || ''}
-            onChange={(e) => onUpdate({ text: e.target.value || null })}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="w-full bg-slate-800 text-slate-100 text-[12px] border border-slate-600 rounded-md px-2 py-1.5 outline-none focus:border-cyan-500/60 placeholder:text-slate-400"
-          />
-          {clip.text && (
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-slate-300">Position</span>
-                <select
-                  value={clip.textPos || 'center'}
-                  onChange={(e) => onUpdate({ textPos: e.target.value })}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
-                >
-                  <option value="top">Top</option>
-                  <option value="center">Center</option>
-                  <option value="bottom">Bottom</option>
-                </select>
-              </div>
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">
+              Text Overlays
+            </label>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const overlays = clip.textOverlays || [];
+                const newOverlay = {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  text: '',
+                  x: 50,
+                  y: 50,
+                  size: '4xl',
+                  color: '#ffffff',
+                  animation: 'none',
+                  positionMode: 'percentage',
+                };
+                onUpdate({ textOverlays: [...overlays, newOverlay] });
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="text-[11px] px-2 py-1 rounded-md bg-slate-700 text-slate-200 hover:bg-slate-600"
+            >
+              + Add
+            </button>
+          </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-slate-300">Animation</span>
-                <select
-                  value={clip.textAnim || 'none'}
-                  onChange={(e) => onUpdate({ textAnim: e.target.value })}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
+          {(clip.textOverlays && clip.textOverlays.length > 0) ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {clip.textOverlays.map((overlay, index) => (
+                <div
+                  key={overlay.id || index}
+                  className="rounded-md border border-slate-700 bg-slate-900/80 px-2 py-2 space-y-1.5"
                 >
-                  <option value="none">None</option>
-                  <option value="fade">Fade</option>
-                  <option value="slide">Slide</option>
-                  <option value="scale">Bounce</option>
-                </select>
-              </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      Overlay {index + 1}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Toggle positioning mode for this overlay (handled in parent via optional prop)
+                          if (typeof onEditTextOverlayPosition === 'function') {
+                            onEditTextOverlayPosition({
+                              type: 'clip',
+                              clipId: clip.id,
+                              overlayId: overlay.id,
+                            });
+                          }
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-200 hover:bg-slate-600"
+                      >
+                        Position on Video
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = (clip.textOverlays || []).filter((ov) => ov.id !== overlay.id);
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="text-[11px] px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-500"
+                        title="Remove overlay"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-slate-300">Size</span>
-                <select
-                  value={clip.textSize || '4xl'}
-                  onChange={(e) => onUpdate({ textSize: e.target.value })}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
-                >
-                  <option value="xl">Small</option>
-                  <option value="2xl">Medium</option>
-                  <option value="4xl">Large</option>
-                  <option value="6xl">X-Large</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] text-slate-300">Color</span>
-                <div className="flex items-center gap-1">
                   <input
-                    type="color"
-                    value={clip.textColor || '#ffffff'}
-                    onChange={(e) => onUpdate({ textColor: e.target.value })}
+                    type="text"
+                    placeholder="Overlay text..."
+                    value={overlay.text || ''}
+                    onChange={(e) => {
+                      const next = (clip.textOverlays || []).map((ov) =>
+                        ov.id === overlay.id ? { ...ov, text: e.target.value } : ov
+                      );
+                      onUpdate({ textOverlays: next });
+                    }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className="w-full h-4 bg-transparent border-none p-0 cursor-pointer"
+                    className="w-full bg-slate-800 text-slate-100 text-[12px] border border-slate-600 rounded-md px-2 py-1.5 outline-none focus:border-cyan-500/60 placeholder:text-slate-400"
                   />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-400">X Position (%)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={overlay.x ?? 50}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          const next = (clip.textOverlays || []).map((ov) =>
+                            ov.id === overlay.id ? { ...ov, x: Math.max(0, Math.min(100, value || 0)) } : ov
+                          );
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="w-full bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-400">Y Position (%)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={overlay.y ?? 50}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          const next = (clip.textOverlays || []).map((ov) =>
+                            ov.id === overlay.id ? { ...ov, y: Math.max(0, Math.min(100, value || 0)) } : ov
+                          );
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="w-full bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-400">Size</span>
+                      <select
+                        value={overlay.size || '4xl'}
+                        onChange={(e) => {
+                          const next = (clip.textOverlays || []).map((ov) =>
+                            ov.id === overlay.id ? { ...ov, size: e.target.value } : ov
+                          );
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
+                      >
+                        <option value="xl">Small</option>
+                        <option value="2xl">Medium</option>
+                        <option value="4xl">Large</option>
+                        <option value="6xl">X-Large</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-slate-400">Animation</span>
+                      <select
+                        value={overlay.animation || 'none'}
+                        onChange={(e) => {
+                          const next = (clip.textOverlays || []).map((ov) =>
+                            ov.id === overlay.id ? { ...ov, animation: e.target.value } : ov
+                          );
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
+                      >
+                        <option value="none">None</option>
+                        <option value="fade">Fade</option>
+                        <option value="slide">Slide</option>
+                        <option value="scale">Bounce</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 col-span-2">
+                      <span className="text-[10px] text-slate-400">Color</span>
+                      <input
+                        type="color"
+                        value={overlay.color || '#ffffff'}
+                        onChange={(e) => {
+                          const next = (clip.textOverlays || []).map((ov) =>
+                            ov.id === overlay.id ? { ...ov, color: e.target.value } : ov
+                          );
+                          onUpdate({ textOverlays: next });
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="w-full h-5 bg-transparent border-none p-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              No text overlays yet. Click <span className="font-semibold">Add</span> to create one.
+            </p>
           )}
         </div>
 

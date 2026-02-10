@@ -7,6 +7,7 @@ import ArcaneMistBg from './components/Logo/MagicWandBg';
 import Toolbar from './components/Toolbar/Toolbar';
 import VideoPlayer from './components/Preview/VideoPlayer';
 import Timeline from './components/Timeline/Timeline';
+import TextOverlayManager from './components/TextOverlayManager';
 import ExportPanel from './components/Export/ExportPanel';
 import FileDialog from './components/Project/FileDialog';
 import SaveDialog from './components/Project/SaveDialog';
@@ -41,16 +42,22 @@ function App() {
     loadProjectData,
     loadAutoSave,
     clearAutoSave,
-    resetProject,
     activeTool,
     setActiveTool,
+    resetProject,
     undo,
     redo,
     canUndo,
     canRedo,
     addCustomFilter,
     updateCustomFilter,
-    removeCustomFilter
+    removeCustomFilter,
+    addTextOverlay,
+    updateTextOverlay,
+    removeTextOverlay,
+    addGlobalTextOverlay,
+    updateGlobalTextOverlay,
+    removeGlobalTextOverlay,
   } = useProject();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -71,6 +78,7 @@ function App() {
   const [previewTime, setPreviewTime] = useState(0); // Time for the currently previewed asset
   const [selectedClipIds, setSelectedClipIds] = useState([]); // Clips selected on timeline
   const [clipboard, setClipboard] = useState(null); // Clipboard for copy/paste
+  const [overlayEditTarget, setOverlayEditTarget] = useState(null); // Currently positioned text overlay
 
   // Initial load check for autosave
   useEffect(() => {
@@ -108,6 +116,35 @@ function App() {
   // Layout state
   const [timelineHeight, setTimelineHeight] = useState(300); // Initial height in pixels
   const [isResizing, setIsResizing] = useState(false);
+
+  const handleStartOverlayPositioning = (target) => {
+    if (!target) {
+      setOverlayEditTarget(null);
+      return;
+    }
+    setOverlayEditTarget((prev) => {
+      if (
+        prev &&
+        prev.type === target.type &&
+        prev.clipId === target.clipId &&
+        prev.overlayId === target.overlayId
+      ) {
+        return null;
+      }
+      return target;
+    });
+  };
+
+  const handleOverlayPositionChange = (target, position) => {
+    if (!target || !position) return;
+    if (target.type === 'clip') {
+      if (!target.clipId || !target.overlayId) return;
+      updateTextOverlay(target.clipId, target.overlayId, position);
+    } else if (target.type === 'global') {
+      if (!target.overlayId) return;
+      updateGlobalTextOverlay(target.overlayId, position);
+    }
+  };
 
   const handleTimeUpdate = (time) => {
     if (selectedAsset) {
@@ -463,16 +500,32 @@ function App() {
             genAIProgress={genAIProgress}
             onStartRecording={() => setShowRecorder(true)}
           />
-          <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
-            <VideoPlayer
-              project={project}
-              currentTime={currentTime}
-              previewTime={previewTime}
-              isPlaying={isPlaying}
-              onTimeUpdate={handleTimeUpdate}
-              onPlayPause={handlePlayPause}
-              previewAsset={selectedAsset}
-            />
+          <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
+            <div className="flex-1 flex items-center justify-center">
+              <VideoPlayer
+                project={project}
+                currentTime={currentTime}
+                previewTime={previewTime}
+                isPlaying={isPlaying}
+                onTimeUpdate={handleTimeUpdate}
+                onPlayPause={handlePlayPause}
+                previewAsset={selectedAsset}
+                overlayEditTarget={overlayEditTarget}
+                onOverlayPositionChange={handleOverlayPositionChange}
+              />
+            </div>
+            <div className="mt-3">
+              <TextOverlayManager
+                project={project}
+                currentTime={currentTime}
+                onAddGlobalOverlay={addGlobalTextOverlay}
+                onUpdateGlobalOverlay={updateGlobalTextOverlay}
+                onRemoveGlobalOverlay={removeGlobalTextOverlay}
+                onEditOverlayPosition={(overlayId) =>
+                  handleStartOverlayPositioning({ type: 'global', overlayId })
+                }
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -589,6 +642,7 @@ function App() {
           onDeleteCustomFilter={removeCustomFilter}
           onUpdateCustomFilter={updateCustomFilter}
           onReverseClips={handleReverseClips}
+          onEditTextOverlayPosition={handleStartOverlayPositioning}
         />
       </div>
 

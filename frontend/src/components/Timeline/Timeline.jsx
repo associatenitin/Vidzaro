@@ -38,7 +38,8 @@ export default function Timeline({
   onDeleteCustomFilter,
   onUpdateCustomFilter,
   onAddAsset,
-  onReverseClips
+  onReverseClips,
+  onEditTextOverlayPosition,
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -1049,6 +1050,7 @@ export default function Timeline({
                                   }
                                 });
                               }}
+                              onEditTextOverlayPosition={onEditTextOverlayPosition}
                             />
                           </div>
                         );

@@ -9,6 +9,7 @@ export function useProject() {
     clips: [],
     assets: [], // Media/Workspace assets
     customFilters: [], // Custom filter presets
+    textOverlays: [], // Global text overlays (independent of clips)
     tracks: [
       { id: 0, label: 'Video 1', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
       { id: 1, label: 'Video 2', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
@@ -116,7 +117,8 @@ export function useProject() {
       trimEnd: asset.duration,
       volume: 1,
       speed: 1,
-      text: null,
+      text: null, // legacy single text field (migrated into textOverlays on load)
+      textOverlays: [], // array of per-clip text overlays
       track: trackId,
       startPos: startPos,
       order: project.clips.length,
@@ -168,6 +170,65 @@ export function useProject() {
         updatedAt: new Date().toISOString(),
       };
     });
+  }, [setProjectWithHistory]);
+
+  // Per-clip text overlay management
+  const addTextOverlay = useCallback((clipId, overlay) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.textOverlays || [];
+        const newOverlay = {
+          id: uuidv4(),
+          text: '',
+          x: 50,
+          y: 50,
+          size: '4xl',
+          color: '#ffffff',
+          animation: 'none',
+          positionMode: 'percentage',
+          ...overlay,
+        };
+        return {
+          ...clip,
+          textOverlays: [...existing, newOverlay],
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const updateTextOverlay = useCallback((clipId, overlayId, updates) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.textOverlays || [];
+        return {
+          ...clip,
+          textOverlays: existing.map((ov) =>
+            ov.id === overlayId ? { ...ov, ...updates } : ov
+          ),
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const removeTextOverlay = useCallback((clipId, overlayId) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      clips: prev.clips.map((clip) => {
+        if (clip.id !== clipId) return clip;
+        const existing = clip.textOverlays || [];
+        return {
+          ...clip,
+          textOverlays: existing.filter((ov) => ov.id !== overlayId),
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
   }, [setProjectWithHistory]);
 
   const reorderClips = useCallback((newOrder) => {
@@ -291,7 +352,29 @@ export function useProject() {
         // Keep as string for now - conversion happens at display/export time
         // This maintains backward compatibility
       }
-      
+
+      // Migrate legacy single text overlay fields into textOverlays array
+      let textOverlays = Array.isArray(clip.textOverlays) ? clip.textOverlays : null;
+      if (!textOverlays) {
+        if (clip.text && typeof clip.text === 'string' && clip.text.trim() !== '') {
+          let y = 50;
+          if (clip.textPos === 'top') y = 20;
+          else if (clip.textPos === 'bottom') y = 80;
+          textOverlays = [{
+            id: uuidv4(),
+            text: clip.text,
+            x: 50,
+            y,
+            size: clip.textSize || '4xl',
+            color: clip.textColor || '#ffffff',
+            animation: clip.textAnim || 'none',
+            positionMode: 'percentage',
+          }];
+        } else {
+          textOverlays = [];
+        }
+      }
+
       return {
         ...clip,
         videoEnabled: clip.videoEnabled !== undefined ? clip.videoEnabled : true,
@@ -306,6 +389,7 @@ export function useProject() {
         transitionOut: clip.transitionOut !== undefined ? clip.transitionOut : null,
         transitionIn: clip.transitionIn !== undefined ? clip.transitionIn : null,
         filter: filter || null, // Keep filter as-is (string or object)
+        textOverlays,
       };
     });
 
@@ -319,6 +403,7 @@ export function useProject() {
       tracks: projectData.tracks && projectData.tracks.length > 0
         ? projectData.tracks
         : defaultTracks, // Use saved tracks or defaults
+      textOverlays: projectData.textOverlays || [], // Global text overlays
       createdAt: projectData.createdAt || new Date().toISOString(),
       updatedAt: projectData.updatedAt || new Date().toISOString(),
     };
@@ -401,6 +486,7 @@ export function useProject() {
       clips: [],
       assets: [],
       customFilters: [],
+      textOverlays: [],
       tracks: [
         { id: 0, label: 'Video 1', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
         { id: 1, label: 'Video 2', type: 'video', muted: false, locked: false, hidden: false, height: 80 },
@@ -443,6 +529,48 @@ export function useProject() {
     setProjectWithHistory((prev) => ({
       ...prev,
       customFilters: (prev.customFilters || []).filter(filter => filter.id !== filterId),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  // Global text overlay management
+  const addGlobalTextOverlay = useCallback((overlay) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      textOverlays: [
+        ...(prev.textOverlays || []),
+        {
+          id: uuidv4(),
+          text: '',
+          x: 50,
+          y: 50,
+          size: '4xl',
+          color: '#ffffff',
+          animation: 'none',
+          positionMode: 'percentage',
+          startTime: 0,
+          endTime: 3,
+          ...overlay,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const updateGlobalTextOverlay = useCallback((overlayId, updates) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      textOverlays: (prev.textOverlays || []).map((ov) =>
+        ov.id === overlayId ? { ...ov, ...updates } : ov
+      ),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
+  const removeGlobalTextOverlay = useCallback((overlayId) => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      textOverlays: (prev.textOverlays || []).filter((ov) => ov.id !== overlayId),
       updatedAt: new Date().toISOString(),
     }));
   }, [setProjectWithHistory]);
@@ -509,6 +637,14 @@ export function useProject() {
     addCustomFilter,
     updateCustomFilter,
     removeCustomFilter,
+    // Text Overlays
+    addTextOverlay,
+    updateTextOverlay,
+    removeTextOverlay,
+    // Global Text Overlays
+    addGlobalTextOverlay,
+    updateGlobalTextOverlay,
+    removeGlobalTextOverlay,
     // History
     undo,
     redo,

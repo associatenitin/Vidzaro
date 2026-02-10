@@ -270,7 +270,9 @@ export async function exportVideo(projectData, outputPath, tempDir) {
   const inputs = [];
 
   try {
-    // 1. Process each clip individually (trim, filters, speed, volume)
+    const globalTextOverlays = projectData.textOverlays || [];
+
+    // 1. Process each clip individually (trim, filters, speed, volume, per-clip/global text overlays)
     for (let i = 0; i < projectData.clips.length; i++) {
       const clip = projectData.clips[i];
       const processedPath = path.join(tempDir, `processed-${clip.id}.mp4`);
@@ -379,9 +381,78 @@ export async function exportVideo(projectData, outputPath, tempDir) {
         }
       }
 
-      if (clip.text) {
-        const escapedText = clip.text.replace(/'/g, "'\\''").replace(/,/g, '\\,');
-        videoFilters.push(`drawtext=text='${escapedText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2:borderw=2:bordercolor=black`);
+      // Per-clip text overlays (new model) + migration fallback from legacy clip.text
+      const perClipOverlays = Array.isArray(clip.textOverlays) && clip.textOverlays.length > 0
+        ? clip.textOverlays
+        : (clip.text
+          ? [{
+              text: clip.text,
+              x: 50,
+              y: clip.textPos === 'top' ? 20 : clip.textPos === 'bottom' ? 80 : 50,
+              size: clip.textSize || '4xl',
+              color: clip.textColor || '#ffffff',
+              animation: clip.textAnim || 'none',
+              positionMode: 'percentage',
+            }]
+          : []);
+
+      const sizeToFont = (size) => {
+        switch (size) {
+          case 'xl': return 32;
+          case '2xl': return 40;
+          case '6xl': return 72;
+          default: return 48;
+        }
+      };
+
+      perClipOverlays.forEach((ov) => {
+        if (!ov || !ov.text) return;
+        const escapedText = ov.text.replace(/'/g, "'\\''").replace(/,/g, '\\,');
+        const fontSize = sizeToFont(ov.size);
+        const color = ov.color || '#ffffff';
+        const xExpr = ov.positionMode === 'pixels'
+          ? (ov.x != null ? ov.x : '(w-text_w)/2')
+          : `${ov.x != null ? ov.x : 50}*W/100`;
+        const yExpr = ov.positionMode === 'pixels'
+          ? (ov.y != null ? ov.y : '(h-text_h)/2')
+          : `${ov.y != null ? ov.y : 50}*H/100`;
+        videoFilters.push(
+          `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${fontSize}:x=${xExpr}:y=${yExpr}:borderw=2:bordercolor=black`
+        );
+      });
+
+      // Global text overlays applied with enable=between(t, start, end)
+      if (globalTextOverlays.length > 0) {
+        const clipStartPos = clip.startPos || 0;
+        const clipDurTimeline = ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+        const clipEndPos = clipStartPos + clipDurTimeline;
+
+        globalTextOverlays.forEach((ov) => {
+          if (!ov || !ov.text) return;
+          const ovStart = ov.startTime ?? 0;
+          const ovEnd = ov.endTime ?? ovStart;
+          if (ovEnd <= clipStartPos || ovStart >= clipEndPos) return; // no intersection
+
+          const interStart = Math.max(ovStart, clipStartPos);
+          const interEnd = Math.min(ovEnd, clipEndPos);
+          const relStart = interStart - clipStartPos; // seconds within this processed clip
+          const relEnd = interEnd - clipStartPos;
+          if (relEnd <= relStart) return;
+
+          const escapedText = ov.text.replace(/'/g, "'\\''").replace(/,/g, '\\,');
+          const fontSize = sizeToFont(ov.size);
+          const color = ov.color || '#ffffff';
+          const xExpr = ov.positionMode === 'pixels'
+            ? (ov.x != null ? ov.x : '(w-text_w)/2')
+            : `${ov.x != null ? ov.x : 50}*W/100`;
+          const yExpr = ov.positionMode === 'pixels'
+            ? (ov.y != null ? ov.y : '(h-text_h)/2')
+            : `${ov.y != null ? ov.y : 50}*H/100`;
+          const enable = `between(t\\,${relStart.toFixed(3)}\\,${relEnd.toFixed(3)})`;
+          videoFilters.push(
+            `drawtext=text='${escapedText}':fontcolor=${color}:fontsize=${fontSize}:x=${xExpr}:y=${yExpr}:borderw=2:bordercolor=black:enable='${enable}'`
+          );
+        });
       }
 
       if (videoFilters.length > 0) command = command.videoFilters(videoFilters);
