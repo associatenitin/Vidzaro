@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { getThumbnailUrl, getVideoUrl, getVideoThumbnails, getWaveformUrl } from '../../services/api';
+import { getThumbnailUrl, getVideoUrl, getVideoThumbnails, getWaveformUrl, getVideoInfo } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 
 export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAsset, onRenameAsset, onAddToTimeline, onAssetSelect, selectedAssetId, onShare }) {
@@ -125,6 +125,10 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
 
         // Fetch waveforms for assets that don't have one yet
         audioVideoAssets.forEach(asset => {
+            const type = asset.type || (asset.filename.match(/\.(mp4|mov|webm)$/i) ? 'video' :
+                asset.filename.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' :
+                    asset.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video');
+
             // Check if we should skip this asset
             setWaveforms(prevWaveforms => {
                 // Skip if already fetched or currently fetching
@@ -141,27 +145,54 @@ export default function MediaLibrary({ project, onAddAsset, onUpload, onRemoveAs
                     // Mark as fetching
                     fetchingWaveformsRef.current.add(asset.id);
 
-                    // Generate waveform URL (backend expects videoId which is the filename)
-                    const waveformUrl = getWaveformUrl(asset.filename);
-                    
-                    // Pre-load the waveform image to check if it exists
-                    const img = new Image();
-                    img.onload = () => {
-                        setWaveforms(prev => {
-                            if (prev[asset.id]) return prev;
-                            return {
-                                ...prev,
-                                [asset.id]: waveformUrl
+                    const fetchWaveform = async () => {
+                        try {
+                            // For video assets, first check if they actually have an audio track.
+                            // This avoids hitting the /waveform endpoint for silent videos.
+                            if (type === 'video') {
+                                try {
+                                    const response = await getVideoInfo(asset.filename);
+                                    const info = response.data;
+                                    if (!info || !info.audio) {
+                                        // No audio track: mark as failed and skip waveform request entirely
+                                        setFailedWaveforms(prev => new Set(prev).add(asset.id));
+                                        fetchingWaveformsRef.current.delete(asset.id);
+                                        return;
+                                    }
+                                } catch (err) {
+                                    // If /info fails, fall back to trying waveform once
+                                    console.warn(`Failed to fetch video info for ${asset.filename}:`, err);
+                                }
+                            }
+
+                            // Generate waveform URL (backend expects videoId which is the filename)
+                            const waveformUrl = getWaveformUrl(asset.filename);
+                            
+                            // Pre-load the waveform image to check if it exists
+                            const img = new Image();
+                            img.onload = () => {
+                                setWaveforms(prev => {
+                                    if (prev[asset.id]) return prev;
+                                    return {
+                                        ...prev,
+                                        [asset.id]: waveformUrl
+                                    };
+                                });
+                                fetchingWaveformsRef.current.delete(asset.id);
                             };
-                        });
-                        fetchingWaveformsRef.current.delete(asset.id);
+                            img.onerror = () => {
+                                // Waveform doesn't exist or failed to load
+                                setFailedWaveforms(prev => new Set(prev).add(asset.id));
+                                fetchingWaveformsRef.current.delete(asset.id);
+                            };
+                            img.src = waveformUrl;
+                        } catch (error) {
+                            setFailedWaveforms(prev => new Set(prev).add(asset.id));
+                            fetchingWaveformsRef.current.delete(asset.id);
+                        }
                     };
-                    img.onerror = () => {
-                        // Waveform doesn't exist or failed to load
-                        setFailedWaveforms(prev => new Set(prev).add(asset.id));
-                        fetchingWaveformsRef.current.delete(asset.id);
-                    };
-                    img.src = waveformUrl;
+
+                    fetchWaveform();
                     
                     return prevFailed;
                 });
