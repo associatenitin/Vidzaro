@@ -338,52 +338,65 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             transform: panelPosition.transform || 'none',
             zIndex: 9999,
           }}
-          className="pointer-events-auto transition-opacity flex flex-col gap-2 bg-slate-900/95 backdrop-blur-sm p-2 rounded border border-slate-600 shadow-2xl w-56"
+          className="pointer-events-auto flex flex-col bg-slate-900/98 backdrop-blur-md rounded-lg border border-slate-600/80 shadow-xl w-64 overflow-hidden"
           onMouseEnter={() => setIsHoveringSettings(true)}
           onMouseLeave={() => setIsHoveringSettings(false)}
-          onMouseDown={(e) => e.stopPropagation()} // Prevent drag start
-          onPointerDown={(e) => e.stopPropagation()} // Prevent drag start (for dnd-kit)
-          onDragStart={(e) => e.preventDefault()} // Prevent drag start
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDragStart={(e) => e.preventDefault()}
         >
-        <div className="flex items-center justify-between border-b border-slate-700 pb-1 mb-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Clip Settings</span>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="p-0.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white text-[10px]"
-            title="Close"
-          >
-            ×
-          </button>
-          <div className="flex gap-1">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2.5 bg-slate-800/80 border-b border-slate-700/80">
+          <span className="text-xs font-semibold text-slate-200 tracking-wide">Clip Settings</span>
+          <div className="flex items-center gap-1.5">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onUpdate({ audioEnabled: !((clip.audioEnabled === undefined) ? true : clip.audioEnabled) });
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className={`p-1 rounded text-[8px] ${(clip.audioEnabled === false) ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}
+              className={`p-1.5 rounded-md transition-colors ${(clip.audioEnabled === false) ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}
+              title={clip.audioEnabled === false ? 'Unmute' : 'Mute'}
             >
-              {clip.audioEnabled === false ? '🔇' : '🔊'}
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {clip.audioEnabled === false ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                )}
+              </svg>
             </button>
             {onDetachAudio && clip.videoEnabled !== false && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDetachAudio();
-                }}
+                onClick={(e) => { e.stopPropagation(); onDetachAudio(); }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="p-1 rounded bg-slate-700 text-white text-[8px] hover:bg-slate-600"
+                className="p-1.5 rounded-md bg-slate-700/60 text-slate-400 hover:bg-slate-600 hover:text-white transition-colors"
                 title="Detach Audio"
               >
-                🔗 Detach
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
               </button>
             )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-1.5 rounded-md hover:bg-slate-700/60 text-slate-500 hover:text-white transition-colors"
+              title="Close"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Content */}
+        <div className="flex flex-col gap-3 p-3 overflow-y-auto max-h-[min(70vh,400px)]">
+        {/* Filter */}
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Filter</label>
           <select
             value={
               !clip.filter ? '' :
@@ -414,7 +427,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               }
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 flex-1"
+            className="w-full bg-slate-800 text-slate-100 text-[12px] border border-slate-600 rounded-md px-2 py-1.5 outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30"
           >
             <optgroup label="Basic">
               <option value="">No Filter</option>
@@ -449,12 +462,16 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               <option value="__custom__">Create/Edit Custom Filter...</option>
             </optgroup>
           </select>
+        </div>
 
+        {/* Playback */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Playback</label>
           <select
             value={clip.speed || 1}
             onChange={(e) => onUpdate({ speed: parseFloat(e.target.value) })}
             onMouseDown={(e) => e.stopPropagation()}
-            className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+            className="w-full bg-slate-800 text-slate-100 text-[12px] border border-slate-600 rounded-md px-2 py-1.5 outline-none focus:border-cyan-500/60"
           >
             <option value="0.25">0.25x</option>
             <option value="0.5">0.5x</option>
@@ -468,10 +485,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </select>
         </div>
 
-        <div className="space-y-1.5">
+        {/* Volume */}
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] text-slate-400">VOLUME</span>
-            <span className="text-[9px] text-slate-500">{Math.round((clip.volume || 1) * 100)}%</span>
+            <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Volume</label>
+            <span className="text-[12px] font-mono text-slate-200 tabular-nums">{Math.round((clip.volume || 1) * 100)}%</span>
           </div>
           <input
             type="range"
@@ -483,79 +501,80 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onDragStart={(e) => e.preventDefault()}
-            className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            className="w-full h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-cyan-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-500 [&::-webkit-slider-thumb]:cursor-pointer"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <div className="flex justify-between">
-              <span className="text-[8px] text-slate-400">FADE IN</span>
-              <span className="text-[8px] font-mono">{(clip.fadeIn || 0).toFixed(1)}s</span>
+        {/* Fades */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Fades</label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-[11px] text-slate-300">In</span>
+                <span className="text-[11px] font-mono text-slate-200">{(clip.fadeIn || 0).toFixed(1)}s</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                step="0.1"
+                value={clip.fadeIn || 0}
+                onChange={(e) => onUpdate({ fadeIn: parseFloat(e.target.value) })}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDragStart={(e) => e.preventDefault()}
+                className="w-full h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-cyan-500"
+              />
             </div>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              step="0.1"
-              value={clip.fadeIn || 0}
-              onChange={(e) => onUpdate({ fadeIn: parseFloat(e.target.value) })}
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onDragStart={(e) => e.preventDefault()}
-              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex justify-between">
-              <span className="text-[8px] text-slate-400">FADE OUT</span>
-              <span className="text-[8px] font-mono">{(clip.fadeOut || 0).toFixed(1)}s</span>
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span className="text-[11px] text-slate-300">Out</span>
+                <span className="text-[11px] font-mono text-slate-200">{(clip.fadeOut || 0).toFixed(1)}s</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                step="0.1"
+                value={clip.fadeOut || 0}
+                onChange={(e) => onUpdate({ fadeOut: parseFloat(e.target.value) })}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDragStart={(e) => e.preventDefault()}
+                className="w-full h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-cyan-500"
+              />
             </div>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              step="0.1"
-              value={clip.fadeOut || 0}
-              onChange={(e) => onUpdate({ fadeOut: parseFloat(e.target.value) })}
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onDragStart={(e) => e.preventDefault()}
-              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
-            />
           </div>
         </div>
 
         {/* Transitions */}
-        <div className="border-t border-slate-700 pt-1.5 mt-1.5 space-y-2">
-          <div className="text-[8px] text-slate-400 uppercase font-bold">Transitions</div>
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Transitions</label>
           
           {/* Transition Out */}
-          <div className="space-y-1">
+          <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-[8px] text-slate-400">TRANSITION OUT</span>
+              <span className="text-[11px] text-slate-300">Out</span>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (clip.transitionOut) {
-                    onUpdate({ transitionOut: null });
-                  } else {
-                    onUpdate({ transitionOut: { type: 'crossfade', duration: 1 } });
-                  }
+                  if (clip.transitionOut) onUpdate({ transitionOut: null });
+                  else onUpdate({ transitionOut: { type: 'crossfade', duration: 1 } });
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className={`text-[8px] px-1 py-0.5 rounded ${clip.transitionOut ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                className={`text-[11px] font-medium px-2 py-1 rounded-md transition-colors ${clip.transitionOut ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}
               >
-                {clip.transitionOut ? 'ON' : 'OFF'}
+                {clip.transitionOut ? 'On' : 'Off'}
               </button>
             </div>
             {clip.transitionOut && (
-              <div className="space-y-1 pl-2 border-l-2 border-blue-500/50">
+              <div className="space-y-2 pl-3 ml-1 border-l-2 border-cyan-500/40">
                 <select
                   value={clip.transitionOut.type || 'crossfade'}
                   onChange={(e) => onUpdate({ transitionOut: { ...clip.transitionOut, type: e.target.value } })}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
+                  className="w-full bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
                 >
                   <optgroup label="Fade">
                     <option value="crossfade">Crossfade</option>
@@ -580,8 +599,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                     <option value="blur">Blur</option>
                   </optgroup>
                 </select>
-                <div className="flex items-center gap-1">
-                  <span className="text-[8px] text-slate-500">Duration:</span>
+                <div className="flex items-center gap-2">
                   <input
                     type="range"
                     min="0.1"
@@ -592,40 +610,37 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
-                    className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                    className="flex-1 h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-cyan-500"
                   />
-                  <span className="text-[8px] font-mono w-8 text-right">{(clip.transitionOut.duration || 1).toFixed(1)}s</span>
+                  <span className="text-[11px] font-mono text-slate-200 w-7 text-right tabular-nums">{(clip.transitionOut.duration || 1).toFixed(1)}s</span>
                 </div>
               </div>
             )}
           </div>
 
           {/* Transition In */}
-          <div className="space-y-1">
+          <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-[8px] text-slate-400">TRANSITION IN</span>
+              <span className="text-[11px] text-slate-300">In</span>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (clip.transitionIn) {
-                    onUpdate({ transitionIn: null });
-                  } else {
-                    onUpdate({ transitionIn: { type: 'crossfade', duration: 1 } });
-                  }
+                  if (clip.transitionIn) onUpdate({ transitionIn: null });
+                  else onUpdate({ transitionIn: { type: 'crossfade', duration: 1 } });
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className={`text-[8px] px-1 py-0.5 rounded ${clip.transitionIn ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                className={`text-[11px] font-medium px-2 py-1 rounded-md transition-colors ${clip.transitionIn ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}
               >
-                {clip.transitionIn ? 'ON' : 'OFF'}
+                {clip.transitionIn ? 'On' : 'Off'}
               </button>
             </div>
             {clip.transitionIn && (
-              <div className="space-y-1 pl-2 border-l-2 border-green-500/50">
+              <div className="space-y-2 pl-3 ml-1 border-l-2 border-emerald-500/40">
                 <select
                   value={clip.transitionIn.type || 'crossfade'}
                   onChange={(e) => onUpdate({ transitionIn: { ...clip.transitionIn, type: e.target.value } })}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400 w-full"
+                  className="w-full bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
                 >
                   <optgroup label="Fade">
                     <option value="crossfade">Crossfade</option>
@@ -650,8 +665,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                     <option value="blur">Blur</option>
                   </optgroup>
                 </select>
-                <div className="flex items-center gap-1">
-                  <span className="text-[8px] text-slate-500">Duration:</span>
+                <div className="flex items-center gap-2">
                   <input
                     type="range"
                     min="0.1"
@@ -662,36 +676,35 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onDragStart={(e) => e.preventDefault()}
-                    className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-green-400"
+                    className="flex-1 h-1.5 bg-slate-700/80 rounded-full appearance-none cursor-pointer accent-emerald-500"
                   />
-                  <span className="text-[8px] font-mono w-8 text-right">{(clip.transitionIn.duration || 1).toFixed(1)}s</span>
+                  <span className="text-[11px] font-mono text-slate-200 w-7 text-right tabular-nums">{(clip.transitionIn.duration || 1).toFixed(1)}s</span>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        <div className="border-t border-slate-700 pt-1.5 mt-1.5 space-y-2">
-          <div className="flex items-center gap-1">
-            <input
-              type="text"
-              placeholder="Text Overlay..."
-              value={clip.text || ''}
-              onChange={(e) => onUpdate({ text: e.target.value || null })}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="bg-slate-800 text-[10px] border border-slate-600 rounded px-1.5 py-1 outline-none focus:border-blue-400 w-full"
-            />
-          </div>
-
-          {(clip.text) && (
-            <div className="grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-1">
+        {/* Text Overlay */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-medium text-slate-300 uppercase tracking-wider">Text Overlay</label>
+          <input
+            type="text"
+            placeholder="Add text..."
+            value={clip.text || ''}
+            onChange={(e) => onUpdate({ text: e.target.value || null })}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="w-full bg-slate-800 text-slate-100 text-[12px] border border-slate-600 rounded-md px-2 py-1.5 outline-none focus:border-cyan-500/60 placeholder:text-slate-400"
+          />
+          {clip.text && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
               <div className="flex flex-col gap-1">
-                <span className="text-[8px] text-slate-500 uppercase font-bold">Position</span>
+                <span className="text-[11px] text-slate-300">Position</span>
                 <select
                   value={clip.textPos || 'center'}
                   onChange={(e) => onUpdate({ textPos: e.target.value })}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
                 >
                   <option value="top">Top</option>
                   <option value="center">Center</option>
@@ -700,12 +713,12 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               </div>
 
               <div className="flex flex-col gap-1">
-                <span className="text-[8px] text-slate-500 uppercase font-bold">Animation</span>
+                <span className="text-[11px] text-slate-300">Animation</span>
                 <select
                   value={clip.textAnim || 'none'}
                   onChange={(e) => onUpdate({ textAnim: e.target.value })}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
                 >
                   <option value="none">None</option>
                   <option value="fade">Fade</option>
@@ -715,12 +728,12 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               </div>
 
               <div className="flex flex-col gap-1">
-                <span className="text-[8px] text-slate-500 uppercase font-bold">Size</span>
+                <span className="text-[11px] text-slate-300">Size</span>
                 <select
                   value={clip.textSize || '4xl'}
                   onChange={(e) => onUpdate({ textSize: e.target.value })}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="bg-slate-800 text-[9px] border border-slate-600 rounded px-1 py-0.5 outline-none focus:border-blue-400"
+                  className="bg-slate-800 text-slate-100 text-[11px] border border-slate-600 rounded-md px-2 py-1 outline-none focus:border-cyan-500/60"
                 >
                   <option value="xl">Small</option>
                   <option value="2xl">Medium</option>
@@ -730,7 +743,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               </div>
 
               <div className="flex flex-col gap-1">
-                <span className="text-[8px] text-slate-500 uppercase font-bold">Color</span>
+                <span className="text-[11px] text-slate-300">Color</span>
                 <div className="flex items-center gap-1">
                   <input
                     type="color"
@@ -743,6 +756,24 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
               </div>
             </div>
           )}
+        </div>
+
+        {/* Reverse - at bottom */}
+        {!isImage && (
+          <div className="pt-2 mt-2 border-t border-slate-700">
+            <button
+              onClick={(e) => { e.stopPropagation(); onUpdate({ reversed: !clip.reversed }); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-[12px] font-medium transition-colors ${clip.reversed ? 'bg-cyan-500/25 text-cyan-300 ring-1 ring-cyan-500/50' : 'bg-slate-700/80 text-slate-300 hover:bg-slate-600 hover:text-white'}`}
+              title="Reverse playback"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Reverse
+            </button>
+          </div>
+        )}
         </div>
         </div>
       )}

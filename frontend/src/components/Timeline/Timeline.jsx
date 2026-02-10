@@ -401,13 +401,27 @@ export default function Timeline({
   const handleEmptyTimelineContextMenu = (e, trackId, time) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    const menuItems = [
+
+    const isImage = (c) => c.type === 'image' || (c.filename && /\.(jpg|jpeg|png|gif|webp)$/i.test(c.filename));
+    const videoClipCount = selectedClipIds.filter(id => {
+      const c = sortedClips.find(clip => clip.id === id);
+      return c && !isImage(c);
+    }).length;
+
+    const menuItems = [];
+    if (selectedClipIds.length >= 1 && videoClipCount > 0 && onReverseClips) {
+      menuItems.push({
+        label: `Reverse ${selectedClipIds.length === 1 ? 'clip' : `${selectedClipIds.length} clips`}`,
+        icon: '↩️',
+        onClick: onReverseClips
+      });
+      menuItems.push({ separator: true });
+    }
+    menuItems.push(
       {
         label: 'Add clip at position',
         icon: '➕',
         onClick: () => {
-          // Open asset picker modal
           const track = tracks.find(t => t.id === trackId);
           setAssetPicker({
             trackId,
@@ -441,7 +455,7 @@ export default function Timeline({
           onAddTrack && onAddTrack('audio');
         }
       }
-    ];
+    );
 
     if (clipboard && clipboard.clips && clipboard.clips.length > 0) {
       menuItems.push({ separator: true });
@@ -571,6 +585,11 @@ export default function Timeline({
           }
         }
       },
+      ...(onReverseClips ? [{
+        label: 'Reverse',
+        icon: '↩️',
+        onClick: onReverseClips
+      }] : []),
       { separator: true },
       {
         label: 'Set volume for all',
@@ -820,19 +839,6 @@ export default function Timeline({
           >
             🧲 Snap {snapEnabled ? 'On' : 'Off'}
           </button>
-          {onReverseClips && (
-            <button
-              onClick={onReverseClips}
-              disabled={selectedClipIds.length === 0}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${selectedClipIds.length > 0 ? 'text-slate-300 hover:bg-slate-700 hover:text-white' : 'text-slate-600 cursor-not-allowed'}`}
-              title="Reverse selected video clip(s)"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              Reverse
-            </button>
-          )}
         </div>
         <div className="text-xs text-slate-400 font-mono">
           TC: {formatTime(currentTime)}
