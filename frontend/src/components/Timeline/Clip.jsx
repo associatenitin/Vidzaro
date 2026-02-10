@@ -716,7 +716,7 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
           </div>
 
           {(clip.textOverlays && clip.textOverlays.length > 0) ? (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
               {clip.textOverlays.map((overlay, index) => (
                 <div
                   key={overlay.id || index}

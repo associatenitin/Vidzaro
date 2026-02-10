@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { getVideoUrl } from '../../services/api';
 import { convertFilterToCSS } from '../../utils/filterUtils';
 
@@ -279,36 +279,39 @@ export default function VideoPlayer({
   const displayDuration = showPreview ? (previewAsset?.duration || 0) : totalDuration;
   const progress = displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
 
-  // Active text overlays (per-clip + global)
-  const overlayTime = showPreview ? null : currentTime;
+  // Active text overlays (per-clip + global) - memoized for performance
+  const allActiveOverlays = useMemo(() => {
+    if (showPreview) return [];
 
-  const activeClipOverlays = !showPreview
-    ? videoClips.flatMap(info => {
-        const overlays = info.clip.textOverlays || [];
-        return overlays.map(overlay => ({
-          type: 'clip',
-          clipId: info.clip.id,
-          overlayId: overlay.id,
-          overlay,
-        }));
+    const overlayTime = currentTime;
+    const totalDur = totalDuration;
+
+    // Per-clip overlays from active video clips
+    const clipOverlays = videoClips.flatMap(info => {
+      const overlays = info.clip.textOverlays || [];
+      return overlays.map(overlay => ({
+        type: 'clip',
+        clipId: info.clip.id,
+        overlayId: overlay.id,
+        overlay,
+      }));
+    });
+
+    // Global overlays active at current time
+    const globalOverlays = (project.textOverlays || [])
+      .filter((overlay) => {
+        const start = overlay.startTime ?? 0;
+        const end = overlay.endTime ?? totalDur;
+        return overlayTime >= start && overlayTime <= end;
       })
-    : [];
+      .map((overlay) => ({
+        type: 'global',
+        overlayId: overlay.id,
+        overlay,
+      }));
 
-  const activeGlobalOverlays = !showPreview
-    ? (project.textOverlays || [])
-        .filter((overlay) => {
-          const start = overlay.startTime ?? 0;
-          const end = overlay.endTime ?? totalDuration;
-          return overlayTime >= start && overlayTime <= end;
-        })
-        .map((overlay) => ({
-          type: 'global',
-          overlayId: overlay.id,
-          overlay,
-        }))
-    : [];
-
-  const allActiveOverlays = [...activeClipOverlays, ...activeGlobalOverlays];
+    return [...clipOverlays, ...globalOverlays];
+  }, [showPreview, currentTime, totalDuration, videoClips, project.textOverlays]);
 
   const isEditingOverlay = !!overlayEditTarget;
 
