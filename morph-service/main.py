@@ -1181,6 +1181,182 @@ def _do_swap(job_id: str, req: SwapRequest):
             import shutil
             shutil.rmtree(frames_dir, ignore_errors=True)
 
+class TrackObjectRequest(BaseModel):
+    video_path: str
+    clip_start: float = 0
+    clip_end: float | None = None
+    target_x: float  # Normalized 0-1
+    target_y: float  # Normalized 0-1
+    target_width: float = 0.05  # Normalized 0-1
+    target_height: float = 0.05  # Normalized 0-1
+    fps: float | None = None  # Override video fps for keyframe sampling
+
+
+@app.post("/track-object")
+def track_object(req: TrackObjectRequest = Body(...)):
+    """
+    Track an object in a video using OpenCV's CSRT tracker.
+    Returns keyframes with normalized (0-1) x, y positions over time.
+    """
+    try:
+        video_path = req.video_path
+        if not os.path.isfile(video_path):
+            raise HTTPException(status_code=400, detail="Video file not found")
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise HTTPException(status_code=400, detail="Cannot open video file")
+
+        video_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        if frame_w == 0 or frame_h == 0:
+            cap.release()
+            raise HTTPException(status_code=400, detail="Invalid video dimensions")
+
+        clip_start = req.clip_start
+        clip_end = req.clip_end if req.clip_end is not None else total_frames / video_fps
+
+        # Convert clip start/end to frame numbers
+        start_frame = int(clip_start * video_fps)
+        end_frame = min(int(clip_end * video_fps), total_frames)
+
+        if start_frame >= end_frame:
+            cap.release()
+            raise HTTPException(status_code=400, detail="Invalid clip range")
+
+        # Convert normalized target coordinates to pixel ROI
+        roi_x = int(req.target_x * frame_w - (req.target_width * frame_w) / 2)
+        roi_y = int(req.target_y * frame_h - (req.target_height * frame_h) / 2)
+        roi_w = max(10, int(req.target_width * frame_w))
+        roi_h = max(10, int(req.target_height * frame_h))
+
+        # Clamp ROI to frame bounds
+        roi_x = max(0, min(roi_x, frame_w - roi_w))
+        roi_y = max(0, min(roi_y, frame_h - roi_h))
+
+        logger.info(f"[TRACK-OBJECT] Tracking in {video_path}")
+        logger.info(f"[TRACK-OBJECT] ROI: ({roi_x},{roi_y},{roi_w},{roi_h}), frames {start_frame}-{end_frame}")
+
+        # Seek to start frame and read first frame
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            raise HTTPException(status_code=500, detail="Failed to read start frame")
+
+        # Initialize tracker - try CSRT first, then KCF fallback
+        tracker = None
+        try:
+            tracker = cv2.TrackerCSRT_create()
+        except AttributeError:
+            try:
+                tracker = cv2.legacy.TrackerCSRT_create()
+            except Exception:
+                pass
+
+        if tracker is None:
+            try:
+                tracker = cv2.TrackerKCF_create()
+            except AttributeError:
+                try:
+                    tracker = cv2.legacy.TrackerKCF_create()
+                except Exception:
+                    cap.release()
+                    raise HTTPException(
+                        status_code=500,
+                        detail="No OpenCV tracker available. Install opencv-contrib-python."
+                    )
+
+        bbox = (roi_x, roi_y, roi_w, roi_h)
+        tracker.init(frame, bbox)
+
+        keyframes = []
+        # Add the initial keyframe
+        center_x = (roi_x + roi_w / 2) / frame_w
+        center_y = (roi_y + roi_h / 2) / frame_h
+        keyframes.append({
+            "time": 0.0,
+            "x": round(center_x, 4),
+            "y": round(center_y, 4),
+            "scale": 1.0,
+            "rotation": 0.0,
+        })
+
+        # Determine sampling rate — track every N frames for speed
+        sample_fps = req.fps or min(video_fps, 15)  # Default: track at 15fps max
+        frame_step = max(1, int(video_fps / sample_fps))
+
+        current_frame = start_frame + frame_step
+        lost_count = 0
+        max_lost = 5  # Stop if tracker loses object for too many consecutive frames
+
+        while current_frame < end_frame:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            success, tracked_bbox = tracker.update(frame)
+
+            if success:
+                lost_count = 0
+                tx, ty, tw, th = tracked_bbox
+                cx = (tx + tw / 2) / frame_w
+                cy = (ty + th / 2) / frame_h
+                # Scale relative to original ROI size
+                scale = ((tw * th) / max(1, roi_w * roi_h)) ** 0.5
+
+                time_sec = (current_frame - start_frame) / video_fps
+                keyframes.append({
+                    "time": round(time_sec, 4),
+                    "x": round(max(0, min(1, cx)), 4),
+                    "y": round(max(0, min(1, cy)), 4),
+                    "scale": round(max(0.1, min(5, scale)), 4),
+                    "rotation": 0.0,
+                })
+            else:
+                lost_count += 1
+                if lost_count >= max_lost:
+                    logger.warning(f"[TRACK-OBJECT] Tracker lost object at frame {current_frame}, stopping")
+                    break
+                # Interpolate from last known position
+                if keyframes:
+                    last_kf = keyframes[-1]
+                    time_sec = (current_frame - start_frame) / video_fps
+                    keyframes.append({
+                        "time": round(time_sec, 4),
+                        "x": last_kf["x"],
+                        "y": last_kf["y"],
+                        "scale": last_kf["scale"],
+                        "rotation": 0.0,
+                    })
+
+            current_frame += frame_step
+
+        cap.release()
+
+        logger.info(f"[TRACK-OBJECT] Tracking complete: {len(keyframes)} keyframes")
+        return {"keyframes": keyframes}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TRACK-OBJECT] Error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/track-object/progress/{job_id}")
+def track_object_progress(job_id: str):
+    """Get progress of an async tracking job (if we ever implement async tracking)."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 if __name__ == "__main__":
     import uvicorn
     import argparse

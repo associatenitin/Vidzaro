@@ -10,7 +10,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
   const [overlayType, setOverlayType] = useState('text');
   const [overlayContent, setOverlayContent] = useState('');
   const [targetRegion, setTargetRegion] = useState(null); // { x, y, width?, height? } normalized
-  const [isSelectingTarget, setIsSelectingTarget] = useState(false);
+
   const [trackingProgress, setTrackingProgress] = useState(null);
   const [trackingKeyframes, setTrackingKeyframes] = useState(null);
   const [trackingQuality, setTrackingQuality] = useState(null); // { confidence, quality }
@@ -118,7 +118,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
   };
 
   const handleTargetClick = (e) => {
-    if (!isSelectingTarget || !containerRef.current) return;
+    if (!containerRef.current) return;
     e.stopPropagation();
     e.preventDefault();
 
@@ -137,7 +137,6 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
       width: 0.05,
       height: 0.05,
     });
-    setIsSelectingTarget(false);
   };
 
   const handleStartTracking = async () => {
@@ -151,7 +150,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
 
     setLoading(true);
     setError(null);
-    setStep(2);
+    setStep(3);
 
     try {
       const clipStart = clip.trimStart || 0;
@@ -169,7 +168,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
         setTrackingKeyframes(response.keyframes);
         const quality = calculateQuality(response.keyframes);
         setTrackingQuality(quality);
-        setStep(3);
+        setStep(4);
       } else if (response.jobId) {
         // Otherwise poll for progress
         const jobId = response.jobId;
@@ -183,16 +182,16 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
               setTrackingKeyframes(progress.keyframes);
               const quality = calculateQuality(progress.keyframes);
               setTrackingQuality(quality);
-              setStep(3);
+              setStep(4);
             } else if (progress.status === 'failed' || progress.status === 'error') {
               clearInterval(pollInterval);
               setError(progress.error || 'Tracking failed');
-              setStep(1);
+              setStep(2);
             }
           } catch (err) {
             clearInterval(pollInterval);
             setError(err.response?.data?.error || err.message || 'Failed to get tracking progress');
-            setStep(1);
+            setStep(2);
           }
         }, 1000);
 
@@ -254,7 +253,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
       videoId = asset.filename;
     }
   }
-  
+
   if (!videoId) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]">
@@ -265,9 +264,9 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
             {clip.assetId ? 'The asset may be missing from the project.' : 'Please ensure the clip is properly linked to a video asset.'}
           </p>
           <div className="text-xs text-slate-500 mt-2 font-mono">
-            Clip ID: {clip.id}<br/>
-            Asset ID: {clip.assetId || 'none'}<br/>
-            Video ID: {clip.videoId || 'none'}<br/>
+            Clip ID: {clip.id}<br />
+            Asset ID: {clip.assetId || 'none'}<br />
+            Video ID: {clip.videoId || 'none'}<br />
             Filename: {clip.filename || 'none'}
           </div>
           <button
@@ -336,7 +335,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                           )}
                         </div>
                         <div className="text-xs text-slate-500">
-                          {track.keyframes?.length || 0} keyframes • 
+                          {track.keyframes?.length || 0} keyframes •
                           {track.startTime !== undefined && track.endTime !== undefined
                             ? ` ${(track.endTime - track.startTime).toFixed(1)}s duration`
                             : ' Full clip'}
@@ -492,8 +491,6 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                 ref={containerRef}
                 className="relative bg-black rounded-lg overflow-hidden aspect-video cursor-crosshair"
                 onClick={handleTargetClick}
-                onMouseEnter={() => setIsSelectingTarget(true)}
-                onMouseLeave={() => setIsSelectingTarget(false)}
               >
                 <video
                   ref={videoRef}
@@ -507,7 +504,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                     }
                   }}
                 />
-                {isSelectingTarget && (
+                {!targetRegion && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="text-white bg-black/70 px-4 py-2 rounded">
                       Click on the object to track
@@ -558,7 +555,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
           {step === 3 && (
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-slate-200">Tracking in Progress...</h3>
-              {trackingProgress && (
+              {trackingProgress ? (
                 <div>
                   <div className="flex justify-between text-sm text-slate-300 mb-2">
                     <span>Progress</span>
@@ -571,6 +568,11 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                     />
                   </div>
                 </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm text-slate-400">Sending tracking request...</span>
+                </div>
               )}
               <div className="text-sm text-slate-400">
                 Analyzing video frames and tracking object movement...
@@ -578,7 +580,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
             </div>
           )}
 
-          {step === 4 && trackingKeyframes && (
+          {step === 4 && trackingKeyframes && trackingKeyframes.length > 0 && (
             <div className="space-y-4">
               {showKeyframeEditor ? (
                 <KeyframeEditor
@@ -605,12 +607,11 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                     <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-slate-400 uppercase">Tracking Quality</span>
-                        <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                          trackingQuality.quality === 'excellent' ? 'bg-green-900/50 text-green-300' :
-                          trackingQuality.quality === 'good' ? 'bg-blue-900/50 text-blue-300' :
-                          trackingQuality.quality === 'fair' ? 'bg-yellow-900/50 text-yellow-300' :
-                          'bg-red-900/50 text-red-300'
-                        }`}>
+                        <span className={`text-xs font-semibold px-2 py-1 rounded ${trackingQuality.quality === 'excellent' ? 'bg-green-900/50 text-green-300' :
+                            trackingQuality.quality === 'good' ? 'bg-blue-900/50 text-blue-300' :
+                              trackingQuality.quality === 'fair' ? 'bg-yellow-900/50 text-yellow-300' :
+                                'bg-red-900/50 text-red-300'
+                          }`}>
                           {trackingQuality.quality.toUpperCase()}
                         </span>
                       </div>
@@ -621,12 +622,11 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-2">
                           <div
-                            className={`h-2 rounded-full transition-all ${
-                              trackingQuality.confidence >= 80 ? 'bg-green-500' :
-                              trackingQuality.confidence >= 60 ? 'bg-blue-500' :
-                              trackingQuality.confidence >= 40 ? 'bg-yellow-500' :
-                              'bg-red-500'
-                            }`}
+                            className={`h-2 rounded-full transition-all ${trackingQuality.confidence >= 80 ? 'bg-green-500' :
+                                trackingQuality.confidence >= 60 ? 'bg-blue-500' :
+                                  trackingQuality.confidence >= 40 ? 'bg-yellow-500' :
+                                    'bg-red-500'
+                              }`}
                             style={{ width: `${trackingQuality.confidence}%` }}
                           />
                         </div>
@@ -644,6 +644,7 @@ export default function MotionTrackingDialog({ clip, project, currentTime, onClo
                       onClick={() => {
                         setStep(2);
                         setTrackingKeyframes(null);
+                        setTrackingQuality(null);
                         setTrackingProgress(null);
                         setTargetRegion(null);
                       }}
