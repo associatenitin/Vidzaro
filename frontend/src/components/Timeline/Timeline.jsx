@@ -40,6 +40,12 @@ export default function Timeline({
   onAddAsset,
   onReverseClips,
   onEditTextOverlayPosition,
+  onSplit,
+  onTrimStart,
+  onTrimEnd,
+  trimRange,
+  onFinalizeTrim,
+  onCancelTrim,
 }) {
   const [zoom, setZoom] = useState(1);
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -840,6 +846,51 @@ export default function Timeline({
           >
             🧲 Snap {snapEnabled ? 'On' : 'Off'}
           </button>
+          <div className="h-4 w-px bg-slate-700"></div>
+          <button
+            onClick={onSplit}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded text-slate-400 hover:bg-slate-700 hover:text-white"
+            title="Split clip at playhead"
+          >
+            ✂️ Split
+          </button>
+          <button
+            onClick={onTrimStart}
+            className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${
+              trimRange ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'
+            }`}
+            title="Set trim start point"
+          >
+            ⏪ Trim Start
+          </button>
+          <button
+            onClick={onTrimEnd}
+            className={`flex items-center gap-1 text-xs px-2 py-1 rounded ${
+              trimRange ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-white'
+            }`}
+            title="Set trim end point"
+          >
+            ⏩ Trim End
+          </button>
+          {trimRange && (
+            <>
+              <div className="h-4 w-px bg-slate-700"></div>
+              <button
+                onClick={onFinalizeTrim}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700"
+                title="Apply trim"
+              >
+                ✓ Finalize Trim
+              </button>
+              <button
+                onClick={onCancelTrim}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded text-slate-400 hover:bg-slate-700 hover:text-white"
+                title="Cancel trim"
+              >
+                ✕ Cancel
+              </button>
+            </>
+          )}
         </div>
         <div className="text-xs text-slate-400 font-mono">
           TC: {formatTime(currentTime)}
@@ -1051,7 +1102,47 @@ export default function Timeline({
                                 });
                               }}
                               onEditTextOverlayPosition={onEditTextOverlayPosition}
+                              trimRange={trimRange?.clipId === clip.id ? trimRange : null}
                             />
+                            {/* Trim Range Visual Feedback */}
+                            {trimRange && trimRange.clipId === clip.id && (
+                              <>
+                                {/* Dimmed area before trim start */}
+                                {trimRange.startTime > (clip.trimStart || 0) && (
+                                  <div
+                                    className="absolute top-0 bottom-0 bg-black/40 pointer-events-none z-20"
+                                    style={{
+                                      left: `${clipLeft}px`,
+                                      width: `${((trimRange.startTime - (clip.trimStart || 0)) / (clip.speed || 1)) * PIXELS_PER_SECOND * zoom}px`,
+                                    }}
+                                  />
+                                )}
+                                {/* Dimmed area after trim end */}
+                                {trimRange.endTime < (clip.trimEnd || clip.endTime) && (
+                                  <div
+                                    className="absolute top-0 bottom-0 bg-black/40 pointer-events-none z-20"
+                                    style={{
+                                      left: `${clipLeft + ((trimRange.endTime - (clip.trimStart || 0)) / (clip.speed || 1)) * PIXELS_PER_SECOND * zoom}px`,
+                                      width: `${(((clip.trimEnd || clip.endTime) - trimRange.endTime) / (clip.speed || 1)) * PIXELS_PER_SECOND * zoom}px`,
+                                    }}
+                                  />
+                                )}
+                                {/* Trim start marker */}
+                                <div
+                                  className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 pointer-events-none z-30"
+                                  style={{
+                                    left: `${clipLeft + ((trimRange.startTime - (clip.trimStart || 0)) / (clip.speed || 1)) * PIXELS_PER_SECOND * zoom}px`,
+                                  }}
+                                />
+                                {/* Trim end marker */}
+                                <div
+                                  className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 pointer-events-none z-30"
+                                  style={{
+                                    left: `${clipLeft + ((trimRange.endTime - (clip.trimStart || 0)) / (clip.speed || 1)) * PIXELS_PER_SECOND * zoom}px`,
+                                  }}
+                                />
+                              </>
+                            )}
                           </div>
                         );
                       })}

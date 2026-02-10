@@ -79,6 +79,7 @@ function App() {
   const [selectedClipIds, setSelectedClipIds] = useState([]); // Clips selected on timeline
   const [clipboard, setClipboard] = useState(null); // Clipboard for copy/paste
   const [overlayEditTarget, setOverlayEditTarget] = useState(null); // Currently positioned text overlay
+  const [trimRange, setTrimRange] = useState(null); // { clipId, startTime, endTime } for trim range selection
 
   // Initial load check for autosave
   useEffect(() => {
@@ -189,6 +190,131 @@ function App() {
     if (clipsUnderPlayhead.length > 0) {
       splitClip(clipsUnderPlayhead[0].id, currentTime);
     }
+  };
+
+  const handleTrimStart = () => {
+    if (project.clips.length === 0) return;
+
+    let targetClip = null;
+    let clipStartTime = 0;
+
+    // If a clip is selected, use that clip
+    if (selectedClipIds.length === 1) {
+      targetClip = project.clips.find(c => c.id === selectedClipIds[0]);
+      if (targetClip) {
+        clipStartTime = targetClip.startPos || 0;
+        const clipEndTime = clipStartTime + ((targetClip.trimEnd || targetClip.endTime) - (targetClip.trimStart || 0)) / (targetClip.speed || 1);
+        // Only set trim start if playhead is within the selected clip
+        if (currentTime >= clipStartTime && currentTime <= clipEndTime) {
+          const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
+          const trimStartTime = (targetClip.trimStart || 0) + relativeTime;
+          const endTime = trimRange?.clipId === targetClip.id ? trimRange.endTime : (targetClip.trimEnd || targetClip.endTime);
+          
+          setTrimRange({
+            clipId: targetClip.id,
+            startTime: Math.min(trimStartTime, endTime - 0.1), // Ensure start < end
+            endTime: endTime,
+          });
+          return;
+        }
+      }
+    }
+
+    // Otherwise, use top-most visible clip under playhead
+    const clipsUnderPlayhead = project.clips.filter(clip => {
+      const start = clip.startPos || 0;
+      const end = start + ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+      return currentTime >= start && currentTime <= end;
+    }).sort((a, b) => (b.track || 0) - (a.track || 0));
+
+    if (clipsUnderPlayhead.length > 0) {
+      targetClip = clipsUnderPlayhead[0];
+      clipStartTime = targetClip.startPos || 0;
+      const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
+      const trimStartTime = (targetClip.trimStart || 0) + relativeTime;
+      const endTime = trimRange?.clipId === targetClip.id ? trimRange.endTime : (targetClip.trimEnd || targetClip.endTime);
+      
+      setTrimRange({
+        clipId: targetClip.id,
+        startTime: Math.min(trimStartTime, endTime - 0.1), // Ensure start < end
+        endTime: endTime,
+      });
+    }
+  };
+
+  const handleTrimEnd = () => {
+    if (project.clips.length === 0) return;
+
+    let targetClip = null;
+    let clipStartTime = 0;
+
+    // If a clip is selected, use that clip
+    if (selectedClipIds.length === 1) {
+      targetClip = project.clips.find(c => c.id === selectedClipIds[0]);
+      if (targetClip) {
+        clipStartTime = targetClip.startPos || 0;
+        const clipEndTime = clipStartTime + ((targetClip.trimEnd || targetClip.endTime) - (targetClip.trimStart || 0)) / (targetClip.speed || 1);
+        // Only set trim end if playhead is within the selected clip
+        if (currentTime >= clipStartTime && currentTime <= clipEndTime) {
+          const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
+          const trimEndTime = (targetClip.trimStart || 0) + relativeTime;
+          const startTime = trimRange?.clipId === targetClip.id ? trimRange.startTime : (targetClip.trimStart || 0);
+          
+          setTrimRange({
+            clipId: targetClip.id,
+            startTime: startTime,
+            endTime: Math.max(trimEndTime, startTime + 0.1), // Ensure end > start
+          });
+          return;
+        }
+      }
+    }
+
+    // Otherwise, use top-most visible clip under playhead
+    const clipsUnderPlayhead = project.clips.filter(clip => {
+      const start = clip.startPos || 0;
+      const end = start + ((clip.trimEnd || clip.endTime) - (clip.trimStart || 0)) / (clip.speed || 1);
+      return currentTime >= start && currentTime <= end;
+    }).sort((a, b) => (b.track || 0) - (a.track || 0));
+
+    if (clipsUnderPlayhead.length > 0) {
+      targetClip = clipsUnderPlayhead[0];
+      clipStartTime = targetClip.startPos || 0;
+      const relativeTime = (currentTime - clipStartTime) * (targetClip.speed || 1);
+      const trimEndTime = (targetClip.trimStart || 0) + relativeTime;
+      const startTime = trimRange?.clipId === targetClip.id ? trimRange.startTime : (targetClip.trimStart || 0);
+      
+      setTrimRange({
+        clipId: targetClip.id,
+        startTime: startTime,
+        endTime: Math.max(trimEndTime, startTime + 0.1), // Ensure end > start
+      });
+    }
+  };
+
+  const handleFinalizeTrim = () => {
+    if (!trimRange || !trimRange.clipId) return;
+
+    const clip = project.clips.find(c => c.id === trimRange.clipId);
+    if (!clip) return;
+
+    // Ensure valid trim range
+    const minTrimStart = 0;
+    const maxTrimEnd = clip.endTime || clip.duration || 0;
+    const trimStart = Math.max(minTrimStart, Math.min(trimRange.startTime, maxTrimEnd - 0.1));
+    const trimEnd = Math.max(trimStart + 0.1, Math.min(trimRange.endTime, maxTrimEnd));
+
+    updateClip(trimRange.clipId, {
+      trimStart: trimStart,
+      trimEnd: trimEnd,
+    });
+
+    // Clear trim range
+    setTrimRange(null);
+  };
+
+  const handleCancelTrim = () => {
+    setTrimRange(null);
   };
 
   // Resize Handlers
@@ -638,6 +764,12 @@ function App() {
               splitClip(clipsAtPosition[0].id, time);
             }
           }}
+          onSplit={handleSplit}
+          onTrimStart={handleTrimStart}
+          onTrimEnd={handleTrimEnd}
+          trimRange={trimRange}
+          onFinalizeTrim={handleFinalizeTrim}
+          onCancelTrim={handleCancelTrim}
           onSaveCustomFilter={addCustomFilter}
           onDeleteCustomFilter={removeCustomFilter}
           onUpdateCustomFilter={updateCustomFilter}
