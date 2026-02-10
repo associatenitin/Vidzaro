@@ -56,6 +56,10 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 - **Low VRAM mode** — Supports 8GB consumer GPUs using model offload, with slower but more memory-efficient generation.
 - **Integration** — Generated clips are saved to disk and can be imported back into Vidzaro like any other media.
 
+### Royalty-free assets (Pixabay)
+
+- **Pixabay dropdown** — In the main toolbar, next to **Gen AI**, a Pixabay button opens a dropdown with **Royalty Free Images** and **Royalty Free Music** options. Choosing an option shows a confirmation dialog and then opens the corresponding royalty-free content page on [Pixabay](https://pixabay.com/) in a new browser tab.
+
 ### Export & share
 
 - **Export** — Render timeline to video with resolution (1080p, 720p, 480p) and quality (High, Medium, Low); progress indicator and download when done
@@ -64,7 +68,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 ### Interface
 
 - **Menu bar** — File (New, Open, Save, Save As), Edit (Undo, Redo, Delete, Deselect), View (Reset timeline height), Record (Start Recording), **Tools** (Video Morph), Export (Export Video), Help (Keyboard Shortcuts, About)
-- **Toolbar** — Play/Pause, time, undo/redo, tools (Select, Ripple), **Preferences** (gear: Video Morph CPU/GPU toggle), Split
+- **Toolbar** — Play/Pause, time, undo/redo, tools (Select, Ripple), **Gen AI**, **Pixabay** royalty-free shortcuts, **Preferences** (gear: Video Morph CPU/GPU toggle), Split
 - **Keyboard shortcuts** — Playback (Space), Undo/Redo (Ctrl+Z / Ctrl+Shift+Z), tools (V, B, S), seek (←/→, Shift+←/→, Home), delete clip (Del), deselect (Esc), file (Ctrl+N, Ctrl+O, Ctrl+S)
 - **Media library** — Upload videos (MP4, WebM, MOV, AVI, etc.); thumbnails and waveforms; filter by type; add to timeline by drag or “Add to track”; rename, remove, share
 - **Resizable timeline** — Drag the divider to resize the timeline panel
