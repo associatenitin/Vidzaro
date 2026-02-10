@@ -67,7 +67,6 @@ export default function MenuBar({
   onStartRecording,
   onExport,
   canExport,
-  onVideoMorph,
   onOpenPreferences,
   onOpenAdmin,
   onKeyboardShortcuts,
@@ -114,7 +113,6 @@ export default function MenuBar({
 
       <Menu label="Tools" open={openMenu === 'Tools'} onOpen={setOpenMenu} onClose={closeMenu}>
         <div className="px-2 py-1">
-          <MenuItem label="Video Morph..." onClick={() => { onVideoMorph?.(); closeMenu(); }} />
           <MenuItem label="Admin..." onClick={() => { onOpenAdmin?.(); closeMenu(); }} />
           <MenuItem divider />
           <MenuItem label="Preferences..." onClick={() => { onOpenPreferences?.(); closeMenu(); }} />

@@ -728,7 +728,6 @@ function App() {
             onDeselect={handleDeselect}
             hasSelection={selectedClipIds.length > 0}
             onStartRecording={() => setShowRecorder(true)}
-            onVideoMorph={() => setShowMorphWizard(true)}
             onOpenPreferences={() => setShowPreferences(true)}
             onOpenAdmin={() => setShowAdminPanel(true)}
             onExport={() => setShowExportPanel(true)}
@@ -791,6 +790,7 @@ function App() {
             genAIProgress={genAIProgress}
             onStartRecording={() => setShowRecorder(true)}
             onMotionTracking={() => handleOpenMotionTracking(null)}
+            onVideoMorph={() => setShowMorphWizard(true)}
           />
           <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
             <div className="flex-1 flex items-center justify-center">
