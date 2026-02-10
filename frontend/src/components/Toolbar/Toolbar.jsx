@@ -1,8 +1,20 @@
+import { useState } from 'react';
+
 export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const [isPixabayOpen, setIsPixabayOpen] = useState(false);
+
+  const handleOpenPixabay = (url) => {
+    const confirmMessage = 'You are about to open Pixabay in a new tab to browse royalty-free content. Continue?';
+    if (window.confirm(confirmMessage)) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    setIsPixabayOpen(false);
   };
 
   return (
@@ -101,6 +113,40 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
           Gen AI
         </button>
       )}
+
+      {/* Pixabay Dropdown */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsPixabayOpen((open) => !open)}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium flex items-center gap-2"
+          title="Browse royalty-free content on Pixabay"
+        >
+          <span>Pixabay</span>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+
+        {isPixabayOpen && (
+          <div className="absolute mt-1 right-0 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-lg py-1 z-20">
+            <button
+              type="button"
+              onClick={() => handleOpenPixabay('https://pixabay.com/photos/')}
+              className="w-full text-left px-3 py-2 text-sm text-slate-100 hover:bg-slate-700"
+            >
+              Royalty Free Images
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenPixabay('https://pixabay.com/music/')}
+              className="w-full text-left px-3 py-2 text-sm text-slate-100 hover:bg-slate-700"
+            >
+              Royalty Free Music
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Gen AI progress indicator */}
       {genAIProgress && (
