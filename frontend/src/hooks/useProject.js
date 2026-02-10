@@ -94,8 +94,14 @@ export function useProject() {
     let trackId = 0;
 
     if (position) {
-      startPos = position.time;
+      startPos = Math.max(0, position.time || 0);
       trackId = position.track;
+
+      // If this is the first clip on the track, align to start.
+      const trackClips = project.clips.filter(c => (c.track || 0) === trackId);
+      if (trackClips.length === 0) {
+        startPos = 0;
+      }
     } else {
       const track0Clips = project.clips.filter(c => (c.track || 0) === 0);
       const lastClip = track0Clips.sort((a, b) => (a.startPos || 0) + a.duration - ((b.startPos || 0) + b.duration)).pop();

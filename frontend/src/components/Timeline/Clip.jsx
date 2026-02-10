@@ -80,10 +80,11 @@ export default function Clip({ clip, left, width, pixelsPerSecond, onUpdate, onR
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isSortableDragging ? 'none' : transition,
     left: `${left}px`,
     width: `${width}px`,
     opacity: isSortableDragging ? 0.5 : 1,
+    willChange: 'transform',
   };
 
   const handleResizeStart = (side) => (e) => {
