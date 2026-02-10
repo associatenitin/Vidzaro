@@ -451,6 +451,7 @@ function App() {
             onAIEnhance={handleAIEnhance}
             onGenAI={handleOpenGenAI}
             genAIProgress={genAIProgress}
+            onStartRecording={() => setShowRecorder(true)}
           />
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
             <VideoPlayer

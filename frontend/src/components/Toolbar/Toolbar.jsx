@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress }) {
+export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, activeTool, onToolChange, onUndo, onRedo, canUndo, canRedo, onOpenPreferences, onAIEnhance, onGenAI, genAIProgress, onStartRecording }) {
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -111,6 +111,20 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
           Gen AI
+        </button>
+      )}
+
+      {/* Record Button */}
+      {onStartRecording && (
+        <button
+          onClick={onStartRecording}
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium flex items-center gap-2"
+          title="Start screen recording"
+        >
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="5" />
+          </svg>
+          Record
         </button>
       )}
 
