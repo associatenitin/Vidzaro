@@ -19,6 +19,8 @@ import AdminPanel from './components/Admin/AdminPanel';
 import EnhanceDialog from './components/Deblur/EnhanceDialog';
 import GenAIDialog from './components/GenAI/GenAIDialog';
 import MotionTrackingDialog from './components/MotionTracking/MotionTrackingDialog';
+import HelpDialog from './components/Help/HelpDialog';
+import AboutDialog from './components/Help/AboutDialog';
 import { ToastContainer } from './components/Toast';
 import { useEffect } from 'react';
 import { saveProject, uploadVideo, finalizeRecording } from './services/api';
@@ -79,6 +81,8 @@ function App() {
   const [genAIProgress, setGenAIProgress] = useState(null);
   const [showMotionTrackingDialog, setShowMotionTrackingDialog] = useState(false);
   const [motionTrackingClip, setMotionTrackingClip] = useState(null);
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
   const [selectedAsset, setSelectedAsset] = useState(null); // Asset selected for preview
   const [previewTime, setPreviewTime] = useState(0); // Time for the currently previewed asset
@@ -420,7 +424,7 @@ function App() {
   };
 
   const handleAbout = () => {
-    alert('Vidzaro — Edit videos. Zero limits.\n\nA video editor in the browser.');
+    setShowAboutDialog(true);
   };
 
   const handleAIEnhance = () => {
@@ -732,10 +736,30 @@ function App() {
             onOpenAdmin={() => setShowAdminPanel(true)}
             onExport={() => setShowExportPanel(true)}
             canExport={project.clips.length > 0}
+            onOpenHelp={() => setShowHelpDialog(true)}
             onKeyboardShortcuts={handleKeyboardShortcuts}
             onAbout={handleAbout}
             onResetTimelineHeight={handleResetTimelineHeight}
           />
+          <a
+            href="https://github.com/associatenitin"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap flex items-center gap-2 transition-all duration-200
+              bg-gradient-to-b from-cyan-400 via-blue-500 to-violet-600
+              hover:from-cyan-300 hover:via-blue-400 hover:to-violet-500
+              text-white drop-shadow-md
+              border border-white/30
+              shadow-[0_2px_8px_rgba(0,0,0,0.25),inset_0_1px_0_0_rgba(255,255,255,0.4),0_0_20px_rgba(59,130,246,0.3)]
+              hover:shadow-[0_4px_12px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.5),0_0_28px_rgba(59,130,246,0.45)]"
+            title="Nitin Verma — GitHub"
+          >
+            <span className="hidden sm:inline text-white/90">by</span>
+            <span>Nitin Verma</span>
+            <svg className="w-4 h-4 text-white/95" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+            </svg>
+          </a>
           <input
             type="text"
             value={project.name}
@@ -981,6 +1005,16 @@ function App() {
       <PreferencesDialog
         isOpen={showPreferences}
         onClose={() => setShowPreferences(false)}
+      />
+
+      <HelpDialog
+        isOpen={showHelpDialog}
+        onClose={() => setShowHelpDialog(false)}
+      />
+
+      <AboutDialog
+        isOpen={showAboutDialog}
+        onClose={() => setShowAboutDialog(false)}
       />
 
       {showAdminPanel && (

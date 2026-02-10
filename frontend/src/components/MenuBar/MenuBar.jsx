@@ -69,6 +69,7 @@ export default function MenuBar({
   canExport,
   onOpenPreferences,
   onOpenAdmin,
+  onOpenHelp,
   onKeyboardShortcuts,
   onAbout,
   onResetTimelineHeight,
@@ -127,7 +128,7 @@ export default function MenuBar({
 
       <Menu label="Help" open={openMenu === 'Help'} onOpen={setOpenMenu} onClose={closeMenu}>
         <div className="px-2 py-1">
-          <MenuItem label="Keyboard Shortcuts" onClick={() => { onKeyboardShortcuts?.(); closeMenu(); }} />
+          <MenuItem label="Help" onClick={() => { onOpenHelp?.(); closeMenu(); }} />
           <MenuItem label="About Vidzaro" onClick={() => { onAbout?.(); closeMenu(); }} />
         </div>
       </Menu>
