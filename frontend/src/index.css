@@ -110,3 +110,56 @@ body {
 .animate-shimmer {
   animation: shimmer 1.5s infinite;
 }
+
+/* Recorder range slider */
+.recorder-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #334155;
+  border-radius: 9999px;
+}
+
+.recorder-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: #334155;
+}
+
+.recorder-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #ef4444;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.recorder-range::-webkit-slider-thumb:hover {
+  background: #f87171;
+  transform: scale(1.05);
+}
+
+.recorder-range::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: #334155;
+}
+
+.recorder-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4444;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.recorder-range::-moz-range-thumb:hover {
+  background: #f87171;
+  transform: scale(1.05);
+}

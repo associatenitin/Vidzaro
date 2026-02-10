@@ -104,7 +104,6 @@ export function useRecordingPipeline(options = {}) {
       webcamRef.current.position = webcamOptions.position || 'bottom-right';
       webcamRef.current.size = webcamOptions.size ?? 160;
       webcamRef.current.shape = webcamOptions.shape || 'circle';
-      webcamRef.current.blur = webcamOptions.blur || false;
     }
 
     startDrawLoop(fps);

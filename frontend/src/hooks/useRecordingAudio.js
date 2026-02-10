@@ -101,15 +101,17 @@ export function useRecordingAudio() {
 }
 
 /**
- * Request microphone with optional noise suppression constraints.
+ * Request microphone with optional noise suppression constraints and device selection.
  */
 export async function requestMicrophone(options = {}) {
-  const { noiseSuppression = true, echoCancellation = true, autoGainControl = true } = options;
+  const { noiseSuppression = true, echoCancellation = true, autoGainControl = true, deviceId } = options;
+  const audioConstraints = {
+    echoCancellation,
+    noiseSuppression,
+    autoGainControl,
+    ...(deviceId && { deviceId: { exact: deviceId } }),
+  };
   return navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation,
-      noiseSuppression,
-      autoGainControl,
-    },
+    audio: audioConstraints,
   });
 }

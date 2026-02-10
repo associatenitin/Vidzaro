@@ -6,7 +6,7 @@ import { useRef, useCallback } from 'react';
  * @param {{ width: number, height: number }} outputSize - Canvas output dimensions
  * @param {{ x: number, y: number, width: number, height: number } | null} cropRegion - Source region to crop (null = full frame)
  * @param {{ current: { pointerNorm: {x,y}, clicks: Array<{x,y,t}>, cursorHighlight: boolean, clickEffect: boolean, keyOverlay: boolean, keysPressed: Set<string> } } | null} overlayRef - Optional overlay state for cursor/click/keys
- * @param {{ video: HTMLVideoElement | null, position: string, size: number, shape: 'circle'|'square', blur: boolean }} webcamRef - Optional webcam video and options
+ * @param {{ video: HTMLVideoElement | null, position: string, size: number, shape: 'circle'|'square' }} webcamRef - Optional webcam video and options
  */
 export function useRecordingCanvas(outputSize, cropRegion = null, overlayRef = null, webcamRef = null) {
   const canvasRef = useRef(null);
@@ -100,7 +100,6 @@ export function useRecordingCanvas(outputSize, cropRegion = null, overlayRef = n
       const pos = webcam.position || 'bottom-right';
       const size = webcam.size || 160;
       const shape = webcam.shape || 'circle';
-      const blur = webcam.blur;
       let x = 0, y = 0;
       const pad = 16;
       if (pos === 'bottom-right') { x = outW - size - pad; y = outH - size - pad; }
@@ -117,7 +116,6 @@ export function useRecordingCanvas(outputSize, cropRegion = null, overlayRef = n
       const off = webcamOffscreenRef.current;
       const octx = off.getContext('2d');
       if (!octx) return;
-      octx.drawImage(webcam.video, 0, 0, w, h);
 
       ctx.save();
       if (shape === 'circle') {
@@ -126,11 +124,8 @@ export function useRecordingCanvas(outputSize, cropRegion = null, overlayRef = n
         ctx.closePath();
         ctx.clip();
       }
-      if (blur) {
-        ctx.filter = 'blur(8px)';
-        ctx.drawImage(off, 0, 0, w, h, x, y, w, h);
-        ctx.filter = 'none';
-      }
+
+      octx.drawImage(webcam.video, 0, 0, w, h);
       ctx.drawImage(off, 0, 0, w, h, x, y, w, h);
       ctx.restore();
     }
