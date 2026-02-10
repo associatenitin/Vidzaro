@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getVideoUrl } from '../../services/api';
-import { morphDetectFaces, morphRun, morphGetProgress } from '../../services/api';
+import { morphDetectFaces, morphRun, morphGetProgress, adminGetServices } from '../../services/api';
 import UploadArea from '../Upload/UploadArea';
 import CharacterSelect from './CharacterSelect';
 
@@ -42,6 +42,21 @@ export default function MorphWizard({ project, onClose, onComplete }) {
     setLoading(true);
     setError(null);
     try {
+      // Ensure Morph service is running before detecting faces
+      try {
+        const services = await adminGetServices();
+        if (!services?.morph || services.morph.status !== 'running') {
+          setError(
+            'The Morph service is not running. Open Admin \u2192 Services and start "Morph service" first, then try again.'
+          );
+          setLoading(false);
+          return;
+        }
+      } catch (checkError) {
+        // If we cannot check service status (e.g. backend down), fall back to the normal flow
+        console.debug('Failed to check Morph service status', checkError);
+      }
+
       const useCuda = getMorphUseCuda();
       const data = await morphDetectFaces(videoAsset.filename, useCuda);
       setDetectResult(data);
@@ -64,6 +79,21 @@ export default function MorphWizard({ project, onClose, onComplete }) {
     let pollInterval = null;
 
     try {
+      // Ensure Morph service is running before starting the job
+      try {
+        const services = await adminGetServices();
+        if (!services?.morph || services.morph.status !== 'running') {
+          setError(
+            'The Morph service is not running. Open Admin \u2192 Services and start "Morph service" first, then try again.'
+          );
+          setLoading(false);
+          setJobProgress(null);
+          return;
+        }
+      } catch (checkError) {
+        console.debug('Failed to check Morph service status', checkError);
+      }
+
       const useCuda = getMorphUseCuda();
       const targetEmbedding = detectResult?.trackEmbeddings?.[selectedTrackId];
 

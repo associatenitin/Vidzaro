@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { deblurEnhance, deblurGetProgress } from '../../services/api';
+import { deblurEnhance, deblurGetProgress, adminGetServices } from '../../services/api';
 import { getVideoUrl } from '../../services/api';
 
 export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
@@ -33,6 +33,22 @@ export default function EnhanceDialog({ videoAsset, onClose, onComplete }) {
     const jobId = crypto.randomUUID();
 
     try {
+      // Ensure Deblur service is running before starting the job
+      try {
+        const services = await adminGetServices();
+        if (!services?.deblur || services.deblur.status !== 'running') {
+          setError(
+            'The Deblur service is not running. Open Admin \u2192 Services and start "Deblur service" first, then try again.'
+          );
+          setLoading(false);
+          setJobProgress(null);
+          return;
+        }
+      } catch (checkError) {
+        // If we cannot check service status (e.g. backend down), fall back to the normal flow
+        console.debug('Failed to check Deblur service status', checkError);
+      }
+
       const useCudaValue = getDeblurUseCuda();
 
       // Start polling and handle completion

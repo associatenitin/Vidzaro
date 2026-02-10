@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { genAIGenerate, genAIGetProgress } from '../../services/api';
+import { genAIGenerate, genAIGetProgress, adminGetServices } from '../../services/api';
 
 const DEFAULT_NEGATIVE_PROMPT =
   'Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards';
@@ -67,6 +67,22 @@ export default function GenAIDialog({ onClose, onComplete, onProgress }) {
     const jobId = crypto.randomUUID();
 
     try {
+      // Ensure Wan Gen AI service is running before starting the job
+      try {
+        const services = await adminGetServices();
+        if (!services?.wan || services.wan.status !== 'running') {
+          setError(
+            'The Wan Gen AI service is not running. Open Admin \u2192 Services and start "Wan Gen AI service" first, then try again.'
+          );
+          setLoading(false);
+          setJobProgress(null);
+          return;
+        }
+      } catch (checkError) {
+        // If we cannot check service status (e.g. backend down), fall back to the normal flow
+        console.debug('Failed to check Wan Gen AI service status', checkError);
+      }
+
       const interval = setInterval(async () => {
         try {
           const status = await genAIGetProgress(jobId);
