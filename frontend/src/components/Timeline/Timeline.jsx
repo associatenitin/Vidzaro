@@ -861,7 +861,11 @@ export default function Timeline({
             }`}
             title="Set trim start point"
           >
-            ⏪ Trim Start
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <path stroke="#10b981" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              <path stroke="#3b82f6" strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M3 5v14" />
+            </svg>
+            Trim Start
           </button>
           <button
             onClick={onTrimEnd}
@@ -870,7 +874,11 @@ export default function Timeline({
             }`}
             title="Set trim end point"
           >
-            ⏩ Trim End
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <path stroke="#f59e0b" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              <path stroke="#ef4444" strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 5v14" />
+            </svg>
+            Trim End
           </button>
           {trimRange && (
             <>
