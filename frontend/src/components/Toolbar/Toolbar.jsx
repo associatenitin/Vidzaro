@@ -18,10 +18,10 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
   };
 
   return (
-    <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center gap-4 relative z-10">
+    <div className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center gap-4 relative z-10 overflow-x-auto custom-scrollbar">
       <button
         onClick={() => onPlayPause(!isPlaying)}
-        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium flex items-center gap-2"
+        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
       >
         {isPlaying ? (
           <>
@@ -40,12 +40,12 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
         )}
       </button>
 
-      <div className="flex items-center gap-2 text-sm text-slate-400 font-mono w-24">
+      <div className="flex items-center gap-2 text-sm text-slate-400 font-mono w-24 flex-shrink-0">
         <span>{formatTime(currentTime)}</span>
       </div>
 
       {/* Undo/Redo */}
-      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
+      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1 flex-shrink-0">
         <button
           onClick={onUndo}
           disabled={!canUndo}
@@ -64,10 +64,10 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
         </button>
       </div>
 
-      <div className="h-6 w-px bg-slate-700"></div>
+      <div className="h-6 w-px bg-slate-700 flex-shrink-0"></div>
 
       {/* Tools */}
-      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
+      <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1 flex-shrink-0">
         <button
           onClick={() => onToolChange && onToolChange('select')}
           className={`p-1.5 rounded ${activeTool === 'select' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-600'}`}
@@ -84,13 +84,13 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
         </button>
       </div>
 
-      <div className="h-6 w-px bg-slate-700"></div>
+      <div className="h-6 w-px bg-slate-700 flex-shrink-0"></div>
 
       {/* AI Enhance Button */}
       {onAIEnhance && (
         <button
           onClick={onAIEnhance}
-          className="px-4 py-2 min-h-[52px] bg-purple-600 hover:bg-purple-700 rounded-lg font-medium flex items-center gap-2"
+          className="px-4 py-2 min-h-[52px] bg-purple-600 hover:bg-purple-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
           title="AI Enhance Video Clarity"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,7 +104,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       {onGenAI && (
         <button
           onClick={onGenAI}
-          className="px-4 py-2 min-h-[52px] bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium flex items-center gap-2"
+          className="px-4 py-2 min-h-[52px] bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
           title="Generate AI Video (Wan 2.1)"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,7 +118,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       {onMotionTracking && (
         <button
           onClick={onMotionTracking}
-          className="px-4 py-2 min-h-[52px] bg-orange-600 hover:bg-orange-700 rounded-lg font-medium flex items-center gap-2"
+          className="px-4 py-2 min-h-[52px] bg-orange-600 hover:bg-orange-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
           title="Motion Tracking - Attach overlays to tracked objects"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -132,7 +132,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       {onVideoMorph && (
         <button
           onClick={onVideoMorph}
-          className="px-4 py-2 min-h-[52px] bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium flex items-center gap-2"
+          className="px-4 py-2 min-h-[52px] bg-indigo-600 hover:bg-indigo-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
           title="Video Morph - Face swap and morphing"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,7 +146,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       {onStartRecording && (
         <button
           onClick={onStartRecording}
-          className="px-4 py-2 min-h-[52px] bg-red-600 hover:bg-red-700 rounded-lg font-medium flex items-center gap-2"
+          className="px-4 py-2 min-h-[52px] bg-red-600 hover:bg-red-700 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
           title="Start screen recording"
         >
           <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -157,7 +157,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       )}
 
       {/* Royalty Free Images/Sound Dropdown */}
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <button
           type="button"
           onClick={() => setIsPixabayOpen((open) => !open)}
@@ -200,7 +200,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
 
       {/* Gen AI progress indicator */}
       {genAIProgress && (
-        <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-900/80 rounded-lg border border-slate-600 min-w-[180px]">
+        <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-900/80 rounded-lg border border-slate-600 min-w-[180px] flex-shrink-0">
           <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="flex justify-between text-xs mb-0.5">
@@ -223,7 +223,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
       <button
         type="button"
         onClick={() => onOpenPreferences?.()}
-        className="p-2 rounded text-slate-400 hover:text-white hover:bg-slate-600"
+        className="p-2 rounded text-slate-400 hover:text-white hover:bg-slate-600 flex-shrink-0"
         title="Preferences"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -234,7 +234,7 @@ export default function Toolbar({ onSplit, currentTime, isPlaying, onPlayPause, 
 
       <button
         onClick={onSplit}
-        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium flex items-center gap-2"
+        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium flex items-center gap-2 flex-shrink-0"
         title="Split at playhead"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

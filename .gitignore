@@ -152,3 +152,12 @@ morph-service/.venv/
 morph-service/models/
 morph-service/__pycache__/
 /morph-service/gfpgan/weights
+frontend/public/marketing/vidzaro-ai-infographic.png
+frontend/public/marketing/vidzaro-badge-premium.png
+frontend/public/marketing/vidzaro-badge.png
+frontend/public/marketing/vidzaro-banner-lockup.png
+frontend/public/marketing/vidzaro-features.png
+frontend/public/marketing/vidzaro-hero-with-logo.png
+frontend/public/marketing/vidzaro-hero.png
+frontend/public/marketing/vidzaro-infographic.png
+frontend/public/marketing/vidzaro-square-social.png

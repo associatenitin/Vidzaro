@@ -11,31 +11,38 @@ export default function ExportPanel({ project, onClose }) {
   useEffect(() => {
     if (!jobId) return;
 
+    let cancelled = false;
+
     const checkStatus = async () => {
       try {
         const response = await getExportStatus(jobId);
+        if (cancelled) return;
         setStatus(response.data);
 
         if (response.data.status === 'completed') {
           setIsExporting(false);
           setDownloadUrl(getExportDownloadUrl(jobId));
+          clearInterval(interval);
         } else if (response.data.status === 'failed') {
           setIsExporting(false);
           setError(response.data.error || 'Export failed');
-        } else {
-          // Check again in 2 seconds
-          setTimeout(checkStatus, 2000);
+          clearInterval(interval);
         }
       } catch (err) {
+        if (cancelled) return;
         setIsExporting(false);
         setError(err.message || 'Failed to check export status');
+        clearInterval(interval);
       }
     };
 
     const interval = setInterval(checkStatus, 2000);
     checkStatus();
 
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [jobId]);
 
   const [resolution, setResolution] = useState('1080'); // 1080, 720, 480
