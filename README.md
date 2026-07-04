@@ -26,6 +26,7 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 - [Development](#development)
 - [Optional AI services](#optional-ai-services)
   - [AI models and service mapping](#ai-models-and-service-mapping)
+  - [Auto Captions setup](#auto-captions-setup)
 - [Troubleshooting](#troubleshooting)
 - [Browser support](#browser-support)
 - [License](#license)
@@ -76,6 +77,14 @@ Vidzaro is a free, open-source, web-based video editor. No watermarks, no vendor
 
 - **AI-based enhancement** — Optional AI deblur service that can enhance video clarity using Real-ESRGAN.
 - **Quality modes** — Fast, Balanced, and Best presets to trade speed vs quality.
+- **GPU acceleration** — Uses CUDA when available and falls back to CPU when not.
+
+### Auto Captions
+
+- **Speech-to-text** — Optional caption-service (faster-whisper) transcribes a clip's audio into timed caption segments. **Toolbar → Captions** (with a clip selected or under the playhead).
+- **Quality modes** — Fast, Balanced, and Best presets (`tiny`/`base`/`small` Whisper models) to trade speed vs accuracy.
+- **Edit before applying** — Review and edit caption text/timing, delete unwanted segments, then apply them as burned-in text overlays on the timeline (or regenerate).
+- **Export** — Download an `.srt` sidecar file, or export the video with captions burned in (they use the same drawtext overlay pipeline as manual text overlays).
 - **GPU acceleration** — Uses CUDA when available and falls back to CPU when not.
 
 ### Gen AI (Text-to-Video)
@@ -137,6 +146,7 @@ flowchart LR
     MORPH[morph-service\nFace swap & motion tracking\n:8000]
     DEBLUR[deblur-service\nAI Enhance / Real-ESRGAN\n:8002]
     WAN[wan-service\nGen AI text-to-video\n:8003]
+    CAPTION[caption-service\nAuto Captions / faster-whisper\n:8004]
   end
 
   FE -->|"/api"| BE
@@ -145,10 +155,11 @@ flowchart LR
   BE -.->|MORPH_SERVICE_URL| MORPH
   BE -.->|DEBLUR_SERVICE_URL| DEBLUR
   BE -.->|WAN_SERVICE_URL| WAN
+  BE -.->|CAPTION_SERVICE_URL| CAPTION
 ```
 
 - **Solid lines** — Required: frontend calls backend; backend uses FFmpeg and local storage.
-- **Dashed lines** — Optional: backend proxies to AI services only when they are running and the user uses Video Morph, Motion Tracking, AI Enhance, or Gen AI.
+- **Dashed lines** — Optional: backend proxies to AI services only when they are running and the user uses Video Morph, Motion Tracking, AI Enhance, Gen AI, or Auto Captions.
 
 ---
 
@@ -156,7 +167,7 @@ flowchart LR
 
 - **Node.js** 18+ and npm
 - **FFmpeg** installed and on your PATH
-- **AI services (optional):** Python 3.10+ for the Morph (face swap + motion tracking), Deblur, and Wan Gen AI services (see [Video Morph setup](#video-morph-setup), [Video Deblur setup](#video-deblur-setup), and [Gen AI (Wan 2.1) setup](#gen-ai-wan-21-setup)). For Morph GPU acceleration: NVIDIA driver + **CUDA 12** Toolkit with its `bin` folder on PATH (e.g. `cublasLt64_12.dll`). Without CUDA 12, use the toolbar preference to run morph on CPU.
+- **AI services (optional):** Python 3.10+ for the Morph (face swap + motion tracking), Deblur, Wan Gen AI, and Auto Captions services (see [Video Morph setup](#video-morph-setup), [Video Deblur setup](#video-deblur-setup), [Gen AI (Wan 2.1) setup](#gen-ai-wan-21-setup), and [Auto Captions setup](#auto-captions-setup)). For Morph GPU acceleration: NVIDIA driver + **CUDA 12** Toolkit with its `bin` folder on PATH (e.g. `cublasLt64_12.dll`). Without CUDA 12, use the toolbar preference to run morph on CPU.
 
 ### Installing FFmpeg
 
@@ -262,6 +273,7 @@ npm install
 | `MORPH_SERVICE_URL` | Backend | `http://localhost:8000` | Video Morph & motion tracking service base URL |
 | `DEBLUR_SERVICE_URL` | Backend | `http://localhost:8002` | AI Deblur (Real-ESRGAN) service base URL |
 | `WAN_SERVICE_URL` | Backend | `http://localhost:8003` | Wan 2.1 text-to-video service base URL |
+| `CAPTION_SERVICE_URL` | Backend | `http://localhost:8004` | Auto Captions (faster-whisper) service base URL |
 | `VITE_API_URL` | Frontend (build) | `''` (same origin) | API base URL; use e.g. `http://localhost:3001` if frontend is served from another origin |
 
 ---
@@ -272,7 +284,7 @@ npm install
 Vidzaro/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/       # upload, video, export, projects, recordings, shares, morph, motionTracking, deblur, wan, admin
+│   │   ├── routes/       # upload, video, export, projects, recordings, shares, morph, motionTracking, deblur, wan, captions, admin
 │   │   ├── services/     # FFmpeg, project, share
 │   │   ├── utils/        # errorHandler, fileHandler, validation
 │   │   └── server.js
@@ -293,9 +305,14 @@ Vidzaro/
 │   ├── main.py           # FastAPI: /generate, /progress/:jobId, /health
 │   ├── requirements.txt
 │   └── README.md
+├── caption-service/      # Optional: Auto Captions speech-to-text (faster-whisper)
+│   ├── main.py           # FastAPI: /transcribe, /progress/:jobId, /health
+│   ├── requirements.txt
+│   └── README.md
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── Captions/ # CaptionsDialog (Auto Captions)
 │   │   │   ├── Export/   # Export panel
 │   │   │   ├── Library/  # Media library
 │   │   │   ├── MenuBar/  # File, Edit, View, Record, Tools, Export, Help
@@ -332,6 +349,7 @@ Vidzaro/
 | **Motion tracking** | `POST /api/motion-tracking/track`, `GET /api/motion-tracking/progress/:jobId` (object tracking; requires morph-service) |
 | **Deblur** | `POST /api/deblur/enhance`, `GET /api/deblur/progress/:jobId` (AI enhance; requires deblur-service) |
 | **Wan (Gen AI)** | `POST /api/wan/generate`, `GET /api/wan/progress/:jobId` (text-to-video; requires wan-service) |
+| **Captions** | `POST /api/captions/generate`, `GET /api/captions/progress/:jobId` (speech-to-text; requires caption-service) |
 | **Shares** | `POST /api/shares`, `GET /api/shares/:id` |
 | **Health** | `GET /api/health` |
 
@@ -348,6 +366,7 @@ Vidzaro/
 7. **Share** — Use the share action on a library asset to create a shareable link.
 8. **Video Morph** — **Tools → Video Morph...** to replace a person’s face in a video with a face from a photo (requires the morph-service running). Use the toolbar **Preferences** (gear) to switch between GPU (CUDA) and CPU.
 9. **Motion tracking** — Select a clip and use the motion tracking workflow to attach text/sticker/image to an object; the overlay follows the object in preview and export (requires morph-service).
+10. **Auto Captions** — Select a clip (or position the playhead over one) and click **Toolbar → Captions** to transcribe its audio, edit the generated captions, then apply them to the timeline or download an `.srt` (requires caption-service).
 
 ---
 
@@ -398,12 +417,14 @@ Start only the services for the features you use. The backend expects them on th
 | **Motion tracking** (attach overlay to object) | morph-service | 8000 | `MORPH_SERVICE_URL` | Same service as Video Morph. **OpenCV CSRT/KCF** — object tracking (no extra model). Runs in same process; start morph-service once for both features. |
 | **AI Enhance** (video deblur/clarity) | deblur-service | 8002 | `DEBLUR_SERVICE_URL` | **Real-ESRGAN x4plus** — RRDBNet (x4 upscale), ~60 MB; auto-downloaded on first use. CUDA or CPU. Quality modes: Fast, Balanced, Best. |
 | **Gen AI** (text-to-video) | wan-service | 8003 | `WAN_SERVICE_URL` | **Wan2.1-T2V-1.3B** (Hugging Face: `Wan-AI/Wan2.1-T2V-1.3B-Diffusers`). ~2–3 GB, 832×480, ~5 s clips. Low VRAM mode for ~8 GB GPUs (model CPU offload). |
+| **Auto Captions** (speech-to-text) | caption-service | 8004 | `CAPTION_SERVICE_URL` | **faster-whisper** — `tiny`/`base`/`small` models (Fast/Balanced/Best). CTranslate2 runtime; downloads and caches weights on first use. CUDA or CPU. |
 
 **How to start services by feature:**
 
 - **Video Morph and/or Motion Tracking** → From repo root: `cd morph-service`, activate venv, run `python download_models.py` once (InsightFace, InSwapper, GFPGAN; ~1 GB), then `python main.py`. Service listens on 8000.
 - **AI Enhance (deblur)** → `cd deblur-service`, activate venv, `python main.py`. Service listens on 8002. Real-ESRGAN model downloads on first enhance request (~60 MB).
 - **Gen AI (text-to-video)** → `cd wan-service`, activate venv, `python main.py`. Service listens on 8003. Wan 2.1 model downloads from Hugging Face on first generation (~2–3 GB).
+- **Auto Captions** → `cd caption-service`, activate venv, `python main.py`. Service listens on 8004. The Whisper model downloads on first transcription request.
 
 You can run any combination of these services (e.g. only morph-service, or morph + wan). The app will use whichever are running; features that need a stopped service will show as unavailable.
 
@@ -482,6 +503,26 @@ The optional Wan 2.1 Gen AI service provides text-to-video generation using the 
 
 3. The backend will call this service on `WAN_SERVICE_URL` (default port `8003`) for text-to-video jobs.
 
+### Auto Captions setup
+
+The optional Auto Captions service transcribes a clip's audio into timed captions using faster-whisper. Full details: [caption-service/README.md](caption-service/README.md).
+
+**Quick setup:**
+
+1. **Python 3.10+** and **FFmpeg** on PATH.
+2. From repo root:
+
+   ```bash
+   cd caption-service
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows
+   # source .venv/bin/activate   # macOS/Linux
+   pip install -r requirements.txt
+   python main.py                # or: CAPTION_SERVICE_PORT=8004 python main.py
+   ```
+
+3. The backend will call this service on `CAPTION_SERVICE_URL` (default port `8004`) when you use **Toolbar → Captions**.
+
 ---
 
 ## Troubleshooting
@@ -493,7 +534,7 @@ The optional Wan 2.1 Gen AI service provides text-to-video generation using the 
 | **Video Morph / motion tracking fails or CUDA errors** | Turn off **Video Morph: Use GPU (CUDA)** in **Preferences**. The morph-service will use CPU. See [morph-service/README.md](morph-service/README.md). |
 | **CORS or API errors in browser** | In development, use the frontend dev server (`npm run dev` in `frontend/`); it proxies `/api` to the backend. For a custom backend URL, set `VITE_API_URL` and rebuild. |
 | **Export fails or no output** | Check backend logs for FFmpeg errors. Ensure the timeline has at least one clip and the export path is writable. |
-| **AI service “unavailable”** | Start the corresponding Python service (morph, deblur, wan) and ensure the URL/port matches the backend env vars (`MORPH_SERVICE_URL`, `DEBLUR_SERVICE_URL`, `WAN_SERVICE_URL`). |
+| **AI service “unavailable”** | Start the corresponding Python service (morph, deblur, wan, caption) and ensure the URL/port matches the backend env vars (`MORPH_SERVICE_URL`, `DEBLUR_SERVICE_URL`, `WAN_SERVICE_URL`, `CAPTION_SERVICE_URL`). |
 
 ---
 

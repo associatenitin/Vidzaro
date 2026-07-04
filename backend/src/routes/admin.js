@@ -14,14 +14,16 @@ const router = express.Router();
 const MORPH_SERVICE_URL = process.env.MORPH_SERVICE_URL || 'http://localhost:8000';
 const DEBLUR_SERVICE_URL = process.env.DEBLUR_SERVICE_URL || 'http://localhost:8002';
 const WAN_SERVICE_URL = process.env.WAN_SERVICE_URL || 'http://localhost:8003';
+const CAPTION_SERVICE_URL = process.env.CAPTION_SERVICE_URL || 'http://localhost:8004';
 
 const projectRoot = path.resolve(__dirname, '../../..');
 const morphServiceDir = path.join(projectRoot, 'morph-service');
 const deblurServiceDir = path.join(projectRoot, 'deblur-service');
 const wanServiceDir = path.join(projectRoot, 'wan-service');
+const captionServiceDir = path.join(projectRoot, 'caption-service');
 
 // PIDs of processes we started (so we can stop them)
-const startedProcesses = { morph: null, deblur: null, wan: null };
+const startedProcesses = { morph: null, deblur: null, wan: null, caption: null };
 
 function getPythonExecutable(serviceDir) {
   const isWindows = process.platform === 'win32';
@@ -80,15 +82,18 @@ router.get('/services', async (req, res, next) => {
     let morphOk = false;
     let deblurOk = false;
     let wanOk = false;
+    let captionOk = false;
     try {
-      const [m, d, w] = await Promise.all([
+      const [m, d, w, c] = await Promise.all([
         checkServiceHealth(MORPH_SERVICE_URL),
         checkServiceHealth(DEBLUR_SERVICE_URL),
         checkServiceHealth(WAN_SERVICE_URL),
+        checkServiceHealth(CAPTION_SERVICE_URL),
       ]);
       morphOk = m;
       deblurOk = d;
       wanOk = w;
+      captionOk = c;
     } catch (e) {
       console.warn('[ADMIN] Health check error:', e.message);
     }
@@ -109,6 +114,11 @@ router.get('/services', async (req, res, next) => {
         status: wanOk ? 'running' : 'stopped',
         url: WAN_SERVICE_URL,
         startedByUs: startedProcesses.wan !== null,
+      },
+      caption: {
+        status: captionOk ? 'running' : 'stopped',
+        url: CAPTION_SERVICE_URL,
+        startedByUs: startedProcesses.caption !== null,
       },
     });
   } catch (err) {
@@ -314,6 +324,68 @@ router.post('/services/wan/stop', async (req, res, next) => {
     console.log(`[ADMIN] Stopped Wan service (was PID ${pid})`);
 
     res.json({ ok: true, message: 'Wan Gen AI service stop requested.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/services/caption/start
+ * Start the Auto Captions service (Python).
+ */
+router.post('/services/caption/start', async (req, res, next) => {
+  try {
+    if (startedProcesses.caption !== null && !isProcessAlive(startedProcesses.caption)) {
+      startedProcesses.caption = null;
+      console.log('[ADMIN] Cleared stale Caption PID (process no longer running)');
+    }
+    if (startedProcesses.caption !== null) {
+      return res.status(400).json({ error: 'Caption service was already started by Admin. Stop it first.' });
+    }
+
+    const isWindows = process.platform === 'win32';
+    const pythonExe = getPythonExecutable(captionServiceDir);
+    const child = spawn(pythonExe, ['main.py'], {
+      cwd: captionServiceDir,
+      stdio: 'ignore',
+      detached: true,
+      shell: isWindows,
+      env: { ...process.env, CAPTION_SERVICE_PORT: '8004' },
+    });
+
+    child.unref();
+    startedProcesses.caption = child.pid;
+    console.log(`[ADMIN] Started Caption service (PID ${child.pid}) in ${captionServiceDir}`);
+
+    res.json({ ok: true, pid: child.pid, message: 'Auto Captions service start requested.' });
+  } catch (err) {
+    console.error('[ADMIN] Caption start error:', err);
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/services/caption/stop
+ * Stop the Auto Captions service if we started it.
+ */
+router.post('/services/caption/stop', async (req, res, next) => {
+  try {
+    const pid = startedProcesses.caption;
+    if (pid == null) {
+      return res.status(400).json({
+        error: 'Caption service was not started by Admin. Stop it manually (e.g. in the terminal).',
+      });
+    }
+
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch (e) {
+      if (e.code !== 'ESRCH') throw e;
+    }
+    startedProcesses.caption = null;
+    console.log(`[ADMIN] Stopped Caption service (was PID ${pid})`);
+
+    res.json({ ok: true, message: 'Auto Captions service stop requested.' });
   } catch (err) {
     next(err);
   }

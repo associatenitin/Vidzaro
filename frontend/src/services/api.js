@@ -248,6 +248,14 @@ export async function adminWanStop() {
   const res = await api.post('/admin/services/wan/stop');
   return res.data;
 }
+export async function adminCaptionStart() {
+  const res = await api.post('/admin/services/caption/start');
+  return res.data;
+}
+export async function adminCaptionStop() {
+  const res = await api.post('/admin/services/caption/stop');
+  return res.data;
+}
 
 // Motion Tracking: track an object in a video
 export async function motionTrackingTrack(videoId, options = {}) {
@@ -270,6 +278,34 @@ export async function motionTrackingTrack(videoId, options = {}) {
 // Motion Tracking: get tracking progress
 export async function motionTrackingGetProgress(jobId) {
   const res = await api.get(`/motion-tracking/progress/${jobId}`);
+  return res.data;
+}
+
+// Auto Captions: transcribe a clip's audio into timed segments
+export async function captionsGenerate(videoId, options = {}) {
+  const {
+    clipStart = 0,
+    clipEnd = null,
+    useCuda = true,
+    qualityMode = 'balanced',
+    language = null,
+    jobId,
+  } = options;
+  const res = await api.post('/captions/generate', {
+    videoId,
+    clipStart,
+    clipEnd,
+    useCuda,
+    qualityMode,
+    language,
+    jobId,
+  });
+  return res.data;
+}
+
+// Auto Captions: poll transcription progress
+export async function captionsGetProgress(jobId) {
+  const res = await api.get(`/captions/progress/${jobId}`);
   return res.data;
 }
 

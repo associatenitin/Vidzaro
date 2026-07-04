@@ -7,6 +7,8 @@ import {
   adminDeblurStop,
   adminWanStart,
   adminWanStop,
+  adminCaptionStart,
+  adminCaptionStop,
 } from '../../services/api';
 
 function ServiceCard({ title, status, url, startedByUs, onStart, onStop, loading, actionError }) {
@@ -64,8 +66,8 @@ export default function AdminPanel({ onClose }) {
   const [services, setServices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [actionLoading, setActionLoading] = useState({ morph: false, deblur: false, wan: false });
-  const [actionError, setActionError] = useState({ morph: null, deblur: null, wan: null });
+  const [actionLoading, setActionLoading] = useState({ morph: false, deblur: false, wan: false, caption: false });
+  const [actionError, setActionError] = useState({ morph: null, deblur: null, wan: null, caption: null });
 
   const fetchServices = useCallback(async () => {
     try {
@@ -164,6 +166,32 @@ export default function AdminPanel({ onClose }) {
     }
   };
 
+  const handleCaptionStart = async () => {
+    setActionError((prev) => ({ ...prev, caption: null }));
+    setActionLoading((prev) => ({ ...prev, caption: true }));
+    try {
+      await adminCaptionStart();
+      await fetchServices();
+    } catch (e) {
+      setActionError((prev) => ({ ...prev, caption: e.response?.data?.error || e.message || 'Failed to start' }));
+    } finally {
+      setActionLoading((prev) => ({ ...prev, caption: false }));
+    }
+  };
+
+  const handleCaptionStop = async () => {
+    setActionError((prev) => ({ ...prev, caption: null }));
+    setActionLoading((prev) => ({ ...prev, caption: true }));
+    try {
+      await adminCaptionStop();
+      await fetchServices();
+    } catch (e) {
+      setActionError((prev) => ({ ...prev, caption: e.response?.data?.error || e.message || 'Failed to stop' }));
+    } finally {
+      setActionLoading((prev) => ({ ...prev, caption: false }));
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10002]"
@@ -228,6 +256,16 @@ export default function AdminPanel({ onClose }) {
                 onStop={handleWanStop}
                 loading={actionLoading.wan}
                 actionError={actionError.wan}
+              />
+              <ServiceCard
+                title="Auto Captions service"
+                status={services.caption?.status}
+                url={services.caption?.url}
+                startedByUs={services.caption?.startedByUs}
+                onStart={handleCaptionStart}
+                onStop={handleCaptionStop}
+                loading={actionLoading.caption}
+                actionError={actionError.caption}
               />
             </div>
           )}

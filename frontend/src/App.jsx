@@ -19,6 +19,7 @@ import AdminPanel from './components/Admin/AdminPanel';
 import EnhanceDialog from './components/Deblur/EnhanceDialog';
 import GenAIDialog from './components/GenAI/GenAIDialog';
 import MotionTrackingDialog from './components/MotionTracking/MotionTrackingDialog';
+import CaptionsDialog from './components/Captions/CaptionsDialog';
 import HelpDialog from './components/Help/HelpDialog';
 import AboutDialog from './components/Help/AboutDialog';
 import { ToastContainer } from './components/Toast';
@@ -61,6 +62,8 @@ function App() {
     addGlobalTextOverlay,
     updateGlobalTextOverlay,
     removeGlobalTextOverlay,
+    addCaptionOverlays,
+    removeAllCaptions,
     addMotionTrackToClip,
     updateMotionTrack,
     removeMotionTrack,
@@ -81,6 +84,8 @@ function App() {
   const [genAIProgress, setGenAIProgress] = useState(null);
   const [showMotionTrackingDialog, setShowMotionTrackingDialog] = useState(false);
   const [motionTrackingClip, setMotionTrackingClip] = useState(null);
+  const [showCaptionsDialog, setShowCaptionsDialog] = useState(false);
+  const [captionsClip, setCaptionsClip] = useState(null);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [shareDialogAsset, setShareDialogAsset] = useState(null);
@@ -625,6 +630,45 @@ function App() {
     setShowMotionTrackingDialog(true);
   };
 
+  const handleOpenCaptions = (clip = null) => {
+    // Captions are anchored to a clip's position on the timeline, so (unlike Video Morph)
+    // this requires an actual placed clip rather than falling back to a library asset.
+    let targetClip = clip;
+
+    if (!targetClip) {
+      if (selectedClipIds.length > 0) {
+        targetClip = project.clips.find(c => c.id === selectedClipIds[0]);
+      } else {
+        const clipAtTime = project.clips.find(c => {
+          const startPos = c.startPos || 0;
+          const duration = ((c.trimEnd || c.endTime) - (c.trimStart || 0)) / (c.speed || 1);
+          return currentTime >= startPos && currentTime < startPos + duration;
+        });
+        targetClip = clipAtTime;
+      }
+    }
+
+    if (!targetClip) {
+      alert('Please select a video clip on the timeline, or position the playhead over one, to generate captions.');
+      return;
+    }
+
+    let finalVideoId = targetClip.videoId || targetClip.filename;
+    if (!finalVideoId && targetClip.assetId) {
+      const asset = project.assets.find(a => a.id === targetClip.assetId);
+      if (asset?.filename) finalVideoId = asset.filename;
+    }
+
+    const isImage = targetClip.type === 'image' || (finalVideoId && /\.(jpg|jpeg|png|gif|webp)$/i.test(finalVideoId));
+    if (!finalVideoId || isImage) {
+      alert('Auto Captions is only available for video/audio clips with a valid source file.');
+      return;
+    }
+
+    setCaptionsClip({ ...targetClip, videoId: finalVideoId });
+    setShowCaptionsDialog(true);
+  };
+
   const handleReverseClips = () => {
     if (selectedClipIds.length === 0) return;
     const selectedClips = project.clips.filter(c => selectedClipIds.includes(c.id));
@@ -815,6 +859,7 @@ function App() {
             onStartRecording={() => setShowRecorder(true)}
             onMotionTracking={() => handleOpenMotionTracking(null)}
             onVideoMorph={() => setShowMorphWizard(true)}
+            onCaptions={() => handleOpenCaptions(null)}
           />
           <div className="flex-1 flex flex-col p-4 overflow-hidden relative">
             <div className="flex-1 flex items-center justify-center">
@@ -1115,6 +1160,21 @@ function App() {
             }
           }}
           onTimeUpdate={setCurrentTime}
+        />
+      )}
+
+      {showCaptionsDialog && captionsClip && (
+        <CaptionsDialog
+          clip={project.clips.find(c => c.id === captionsClip.id) || captionsClip}
+          onClose={() => {
+            setShowCaptionsDialog(false);
+            setCaptionsClip(null);
+          }}
+          onApply={(segments) => {
+            const currentClip = project.clips.find(c => c.id === captionsClip.id) || captionsClip;
+            addCaptionOverlays(currentClip, segments);
+          }}
+          onRemoveAll={removeAllCaptions}
         />
       )}
 

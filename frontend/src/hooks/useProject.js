@@ -589,6 +589,43 @@ export function useProject() {
     }));
   }, [setProjectWithHistory]);
 
+  // Auto Captions: bulk-add transcribed segments as global text overlays anchored to a clip's
+  // timeline position, marked with isCaption so they can be told apart from manual overlays.
+  const addCaptionOverlays = useCallback((clip, segments) => {
+    setProjectWithHistory((prev) => {
+      const clipStartPos = clip.startPos || 0;
+      const speed = clip.speed || 1;
+      const newOverlays = (segments || [])
+        .filter((seg) => seg && seg.text && seg.text.trim())
+        .map((seg) => ({
+          id: uuidv4(),
+          text: seg.text.trim(),
+          x: 50,
+          y: 90,
+          size: '2xl',
+          color: '#ffffff',
+          animation: 'none',
+          positionMode: 'percentage',
+          startTime: clipStartPos + seg.start / speed,
+          endTime: clipStartPos + seg.end / speed,
+          isCaption: true,
+        }));
+      return {
+        ...prev,
+        textOverlays: [...(prev.textOverlays || []), ...newOverlays],
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }, [setProjectWithHistory]);
+
+  const removeAllCaptions = useCallback(() => {
+    setProjectWithHistory((prev) => ({
+      ...prev,
+      textOverlays: (prev.textOverlays || []).filter((ov) => !ov.isCaption),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [setProjectWithHistory]);
+
   // Motion tracking management
   const addMotionTrackToClip = useCallback((clipId, track) => {
     setProjectWithHistory((prev) => ({
@@ -717,6 +754,9 @@ export function useProject() {
     addGlobalTextOverlay,
     updateGlobalTextOverlay,
     removeGlobalTextOverlay,
+    // Auto Captions
+    addCaptionOverlays,
+    removeAllCaptions,
     // Motion Tracking
     addMotionTrackToClip,
     updateMotionTrack,
