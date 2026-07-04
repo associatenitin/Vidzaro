@@ -523,6 +523,8 @@ The optional Auto Captions service transcribes a clip's audio into timed caption
 
 3. The backend will call this service on `CAPTION_SERVICE_URL` (default port `8004`) when you use **Toolbar → Captions**.
 
+Verified working with Python 3.12 / faster-whisper 1.2.1 (CTranslate2 4.8.1) on Windows, CPU mode. The Whisper model for the selected quality mode downloads automatically on the first transcription request.
+
 ---
 
 ## Troubleshooting

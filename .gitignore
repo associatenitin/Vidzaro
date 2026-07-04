@@ -152,6 +152,11 @@ morph-service/.venv/
 morph-service/models/
 morph-service/__pycache__/
 /morph-service/gfpgan/weights
+
+# Caption service (Python)
+caption-service/.venv/
+caption-service/__pycache__/
+caption-service/caption_service.log
 frontend/public/marketing/vidzaro-ai-infographic.png
 frontend/public/marketing/vidzaro-badge-premium.png
 frontend/public/marketing/vidzaro-badge.png
